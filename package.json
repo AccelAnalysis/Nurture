@@ -1,0 +1,30 @@
+{
+  "name": "nurture",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "preview": "vite preview",
+    "firebase:emulate": "npx -y firebase-tools@latest emulators:start --only hosting",
+    "firebase:preview": "npm run build && npx -y firebase-tools@latest hosting:channel:deploy bootstrap --project nurture-12398 --expires 7d",
+    "firebase:deploy": "npm run build && npx -y firebase-tools@latest deploy --only hosting --project nurture-12398"
+  },
+  "dependencies": {
+    "firebase": "^12.18.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.1.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.2"
+  }
+}

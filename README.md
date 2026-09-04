@@ -1,1 +1,61 @@
-Nurture is a general APP hub.
+# Nurture
+
+Nurture is a general app hub built around the Seven-Stage Customer Pipeline.
+
+## Core stack
+
+- **Firebase / Firestore** — hosting, authentication, database, storage, functions, messaging, analytics, feature controls, and monitoring
+- **Stripe** — payments and subscriptions
+- **Twilio + SendGrid** — SMS and email communications
+- **GitHub** — source control and CI/CD
+- **nurture.accelanalysis.com** — production domain
+
+## Firebase project
+
+Project ID: `nurture-12398`
+
+Use the current Firebase CLI through `npx -y firebase-tools@latest` for Firebase commands.
+
+## Local development
+
+```bash
+npm install
+cp .env.example .env.local
+npm run dev
+```
+
+The app intentionally starts even before Firebase web configuration is populated. Once the Firebase web app is registered, place the returned public web SDK configuration in `.env.local`.
+
+## Register the Firebase web app
+
+```bash
+npx -y firebase-tools@latest login
+npx -y firebase-tools@latest use nurture-12398
+npx -y firebase-tools@latest apps:create web Nurture --project nurture-12398
+npx -y firebase-tools@latest apps:sdkconfig <APP_ID> --project nurture-12398
+```
+
+Map the returned values into `.env.local` using `.env.example` as the template.
+
+> Firebase web SDK configuration is public application configuration. Stripe secret keys, Twilio Auth Tokens/API secrets, and SendGrid API keys are server-side secrets and must never be committed or exposed through `VITE_*` variables.
+
+## Build and Firebase Hosting
+
+```bash
+npm run build
+npm run firebase:emulate
+npm run firebase:preview
+npm run firebase:deploy
+```
+
+The Hosting target is the existing Firebase project `nurture-12398`. After the first successful deployment, connect `nurture.accelanalysis.com` as the custom domain in Firebase Hosting and add the DNS records Firebase provides at the `accelanalysis.com` DNS provider.
+
+## Current bootstrap status
+
+- GitHub repository configured
+- React + TypeScript + Vite app shell
+- Firebase modular web SDK wired for Auth, Firestore, and Storage
+- Firebase Hosting configuration bound to `nurture-12398`
+- CI build workflow included
+- Stripe account connected externally; payment implementation will remain in test mode until the billing stage is built
+- Twilio account established; SendGrid requires its own `SG.*` API key and domain authentication before production email
