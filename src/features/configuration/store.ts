@@ -18,6 +18,7 @@ export interface ConfigurationStore {
   getPublished(organizationId: string): OrganizationConfiguration;
   getDraftExtension(organizationId: string, extensionKey: string): ConfigurationExtension | null;
   getPublishedExtension(organizationId: string, extensionKey: string): PublishedConfigurationExtension | null;
+  /** Track A Brand/Site/metadata save. Opaque cross-track extensions are preserved. */
   saveDraft(organizationId: string, effective: OrganizationConfiguration): OrganizationConfigurationRecord;
   saveDraftExtension(organizationId: string, extensionKey: string, extension: ConfigurationExtension): OrganizationConfigurationRecord;
   removeDraftExtension(organizationId: string, extensionKey: string): OrganizationConfigurationRecord;
@@ -135,31 +136,47 @@ export class BrowserConfigurationStore implements ConfigurationStore {
 
   saveDraft(organizationId: string, effective: OrganizationConfiguration) {
     const record = this.read(organizationId);
+    const derived = deriveOrganizationOverrides(organizationId, normalizeEffective(effective));
+    const extensions = record.draftOverrides.extensions;
     const next: OrganizationConfigurationRecord = {
       ...record,
       baseTemplateVersion: NURTURE_DEFAULT_TEMPLATE_VERSION,
-      draftOverrides: deriveOrganizationOverrides(organizationId, normalizeEffective(effective)),
+      draftOverrides: {
+        ...derived,
+        ...(extensions && Object.keys(extensions).length ? { extensions: clone(extensions) } : {}),
+      },
       draftUpdatedAt: new Date().toISOString(),
     };
     return this.write(next);
   }
 
   saveDraftExtension(organizationId: string, extensionKey: string, extension: ConfigurationExtension) {
-    const draft = this.getDraft(organizationId);
-    return this.saveDraft(organizationId, {
-      ...draft,
-      extensions: {
-        ...draft.extensions,
-        [extensionKey]: clone(extension),
-      },
+    const record = this.read(organizationId);
+    const extensions = {
+      ...(record.draftOverrides.extensions ?? {}),
+      [extensionKey]: clone(extension),
+    };
+    return this.write({
+      ...record,
+      baseTemplateVersion: NURTURE_DEFAULT_TEMPLATE_VERSION,
+      draftOverrides: { ...record.draftOverrides, extensions },
+      draftUpdatedAt: new Date().toISOString(),
     });
   }
 
   removeDraftExtension(organizationId: string, extensionKey: string) {
-    const draft = this.getDraft(organizationId);
-    const extensions = { ...draft.extensions };
+    const record = this.read(organizationId);
+    const extensions = { ...(record.draftOverrides.extensions ?? {}) };
     delete extensions[extensionKey];
-    return this.saveDraft(organizationId, { ...draft, extensions });
+    const draftOverrides = { ...record.draftOverrides };
+    if (Object.keys(extensions).length) draftOverrides.extensions = extensions;
+    else delete draftOverrides.extensions;
+    return this.write({
+      ...record,
+      baseTemplateVersion: NURTURE_DEFAULT_TEMPLATE_VERSION,
+      draftOverrides,
+      draftUpdatedAt: new Date().toISOString(),
+    });
   }
 
   resetDraft(organizationId: string) {
