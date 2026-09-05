@@ -5,46 +5,14 @@ import { DEMO_ORG_ID } from "../data/demo";
 import { Link, navigate, useRoute } from "../router";
 import { Avatar, Badge } from "./ui";
 
-const publicLinks = [
-  ["Features", "/features"], ["How it works", "/how-it-works"], ["Offers", "/offers"], ["About", "/about"], ["Help", "/help"], ["Contact", "/contact"],
-] as const;
+const publicLinks = [["Features", "/features"], ["How it works", "/how-it-works"], ["Offers", "/offers"], ["Experience", "/experience"], ["About", "/about"], ["Help", "/help"], ["Contact", "/contact"]] as const;
+export function Brand() { return <Link className="brand" href="/"><img src="/brand/logo/nurture-n.svg" alt="" /><span>Nurture</span></Link>; }
+export function PublicShell({ children }: { children: ReactNode }) { return <div className="site-shell"><header className="public-header content-width"><Brand /><nav aria-label="Primary">{publicLinks.slice(0, 4).map(([label, href]) => <Link key={href} href={href}>{label}</Link>)}</nav><div className="header-actions"><Link href="/login">Sign In</Link><Link className="button button-small" href="/register">Create Account</Link><details className="mobile-public-menu"><summary aria-label="Open navigation">Menu</summary><div>{publicLinks.map(([label, href]) => <Link key={href} href={href}>{label}</Link>)}<Link href="/privacy">Privacy</Link><Link href="/terms">Terms</Link></div></details></div></header><main>{children}</main><footer className="public-footer"><div className="content-width footer-grid"><div><Brand /><p>One foundation for the entire customer lifecycle.</p></div><div><h3>Product</h3>{publicLinks.slice(0, 4).map(([label, href]) => <Link key={href} href={href}>{label}</Link>)}</div><div><h3>Company</h3>{publicLinks.slice(4).map(([label, href]) => <Link key={href} href={href}>{label}</Link>)}</div><div><h3>Trust</h3><Link href="/privacy">Privacy</Link><Link href="/terms">Terms</Link><Link href="/help">Support</Link></div><div><h3>Account</h3><Link href="/login">Sign In</Link><Link href="/register">Create Account</Link></div></div></footer></div>; }
 
-export function Brand() {
-  return <Link className="brand" href="/"><img src="/brand/logo/nurture-n.svg" alt="" /><span>Nurture</span></Link>;
-}
-
-export function PublicShell({ children }: { children: ReactNode }) {
-  return <div className="site-shell">
-    <header className="public-header content-width"><Brand /><nav aria-label="Primary">{publicLinks.slice(0, 4).map(([label, href]) => <Link key={href} href={href}>{label}</Link>)}</nav><div className="header-actions"><Link href="/login">Sign In</Link><Link className="button button-small" href="/register">Create Account</Link><details className="mobile-public-menu"><summary aria-label="Open navigation">Menu</summary><div>{publicLinks.map(([label, href]) => <Link key={href} href={href}>{label}</Link>)}<Link href="/privacy">Privacy</Link><Link href="/terms">Terms</Link></div></details></div></header>
-    <main>{children}</main>
-    <footer className="public-footer"><div className="content-width footer-grid"><div><Brand /><p>One foundation for the entire customer lifecycle.</p></div><div><h3>Product</h3>{publicLinks.slice(0, 3).map(([label, href]) => <Link key={href} href={href}>{label}</Link>)}</div><div><h3>Company</h3>{publicLinks.slice(3).map(([label, href]) => <Link key={href} href={href}>{label}</Link>)}</div><div><h3>Trust</h3><Link href="/privacy">Privacy</Link><Link href="/terms">Terms</Link><Link href="/help">Support</Link></div><div><h3>Account</h3><Link href="/login">Sign In</Link><Link href="/register">Create Account</Link></div></div></footer>
-  </div>;
-}
-
-const appNav = [
-  ["Home", "/app"], ["Experience", "/app/experience"], ["Secondary", "/app/secondary"], ["Offers", "/app/offers"], ["Notifications", "/app/notifications"], ["Referrals", "/app/referrals"],
-] as const;
-
+const appNav = [["Home", "/app"], ["Experience", "/app/experience"], ["Secondary", "/app/secondary"], ["Offers", "/app/offers"], ["Notifications", "/app/notifications"], ["Feedback", "/app/feedback"], ["Referrals", "/app/referrals"]] as const;
 const accountNav = [["Account", "/app/account"], ["Profile", "/app/profile"], ["Settings", "/app/settings"], ["Billing", "/app/billing"], ["Help", "/app/help"]] as const;
+const mobileAppNav = [["Home", "/app"], ["Experience", "/app/experience"], ["Secondary", "/app/secondary"], ["Notifications", "/app/notifications"], ["Account", "/app/account"]] as const;
+export function AppShell({ children }: { children: ReactNode }) { const route = useRoute(); const { currentUser, isDemo, signOut } = useAuth(); const { canManage } = useOrganization(); const logout = async () => { await signOut(); navigate("/"); }; return <div className="app-layout"><aside className="sidebar"><div><Brand />{isDemo ? <Badge tone="accent">Demo data</Badge> : null}</div><nav aria-label="Application">{appNav.map(([label, href]) => <Link key={href} href={href} className={route.path === href ? "active" : ""}>{label}</Link>)}</nav><nav aria-label="Account">{accountNav.map(([label, href]) => <Link key={href} href={href} className={route.path === href ? "active" : ""}>{label}</Link>)}{canManage ? <Link href={`/org/${DEMO_ORG_ID}/dashboard`}>Organization Admin</Link> : null}</nav><button className="nav-button" onClick={logout}>Sign Out</button></aside><div className="app-main"><header className="app-topbar"><span className="muted">Nurture app</span><Link className="user-chip" href="/app/account"><Avatar name={currentUser?.displayName ?? "User"} /><span>{currentUser?.displayName ?? currentUser?.email}</span></Link></header><main className="app-content">{children}</main><nav className="mobile-nav" aria-label="Mobile application">{mobileAppNav.map(([label, href]) => <Link key={href} href={href} className={route.path === href ? "active" : ""}>{label}</Link>)}</nav></div></div>; }
 
-export function AppShell({ children }: { children: ReactNode }) {
-  const route = useRoute();
-  const { currentUser, isDemo, signOut } = useAuth();
-  const { canManage } = useOrganization();
-  const logout = async () => { await signOut(); navigate("/"); };
-  return <div className="app-layout">
-    <aside className="sidebar"><div><Brand />{isDemo ? <Badge tone="accent">Demo data</Badge> : null}</div><nav aria-label="Application">{appNav.map(([label, href]) => <Link key={href} href={href} className={route.path === href ? "active" : ""}>{label}</Link>)}</nav><nav aria-label="Account">{accountNav.map(([label, href]) => <Link key={href} href={href} className={route.path === href ? "active" : ""}>{label}</Link>)}{canManage ? <Link href={`/org/${DEMO_ORG_ID}/dashboard`}>Organization Admin</Link> : null}</nav><button className="nav-button" onClick={logout}>Sign Out</button></aside>
-    <div className="app-main"><header className="app-topbar"><div><span className="muted">Nurture app</span></div><Link className="user-chip" href="/app/account"><Avatar name={currentUser?.displayName ?? "User"} /><span>{currentUser?.displayName ?? currentUser?.email}</span></Link></header><main className="app-content">{children}</main><nav className="mobile-nav" aria-label="Mobile application">{appNav.slice(0, 5).map(([label, href]) => <Link key={href} href={href} className={route.path === href ? "active" : ""}>{label}</Link>)}</nav></div>
-  </div>;
-}
-
-const orgNav = [
-  ["Overview", ""], ["Dashboard", "/dashboard"], ["Profile", "/profile"], ["Members", "/members"], ["Roles", "/roles"], ["Invitations", "/invitations"], ["Contacts", "/contacts"], ["Lifecycle", "/lifecycle"], ["Sequences", "/sequences"], ["Templates", "/templates"], ["Surveys", "/surveys"], ["Offers", "/offers"], ["Referrals", "/referrals"], ["Analytics", "/analytics"], ["Billing", "/billing"], ["Settings", "/settings"],
-] as const;
-
-export function OrganizationShell({ children, organizationId }: { children: ReactNode; organizationId: string }) {
-  const route = useRoute();
-  const { organization, role } = useOrganization();
-  const base = `/org/${organizationId}`;
-  return <div className="app-layout org-layout"><aside className="sidebar"><Brand /><div className="org-switcher"><small>Organization</small><strong>{organization?.name ?? "Organization"}</strong><span>{role}</span></div><nav aria-label="Organization administration">{orgNav.map(([label, suffix]) => { const href = `${base}${suffix}`; return <Link key={href} href={href} className={route.path === href ? "active" : ""}>{label}</Link>; })}</nav><Link href="/app">← Back to app</Link></aside><div className="app-main"><header className="app-topbar"><span>Organization administration</span><Badge tone="accent">{role}</Badge></header><main className="app-content">{children}</main><nav className="mobile-nav org-mobile-nav" aria-label="Mobile organization administration">{[["Dashboard", "/dashboard"], ["Contacts", "/contacts"], ["Sequences", "/sequences"], ["Surveys", "/surveys"], ["Settings", "/settings"]].map(([label, suffix]) => { const href = `${base}${suffix}`; return <Link key={href} href={href} className={route.path === href ? "active" : ""}>{label}</Link>; })}</nav></div></div>;
-}
+const orgNav = [["Overview", ""], ["Dashboard", "/dashboard"], ["Profile", "/profile"], ["Members", "/members"], ["Roles", "/roles"], ["Invitations", "/invitations"], ["Contacts", "/contacts"], ["Lifecycle", "/lifecycle"], ["Sequences", "/sequences"], ["Templates", "/templates"], ["Surveys", "/surveys"], ["Offers", "/offers"], ["Referrals", "/referrals"], ["Feedback", "/feedback"], ["Analytics", "/analytics"], ["Billing", "/billing"], ["Settings", "/settings"]] as const;
+export function OrganizationShell({ children, organizationId }: { children: ReactNode; organizationId: string }) { const route = useRoute(); const { organization, role } = useOrganization(); const base = `/org/${organizationId}`; return <div className="app-layout org-layout"><aside className="sidebar"><Brand /><div className="org-switcher"><small>Organization</small><strong>{organization?.name ?? "Organization"}</strong><span>{role}</span></div><nav aria-label="Organization administration">{orgNav.map(([label, suffix]) => { const href = `${base}${suffix}`; return <Link key={href} href={href} className={route.path === href ? "active" : ""}>{label}</Link>; })}</nav><Link href="/app">← Back to app</Link></aside><div className="app-main"><header className="app-topbar"><span>Organization administration</span><Badge tone="accent">{role}</Badge></header><main className="app-content">{children}</main><nav className="mobile-nav org-mobile-nav" aria-label="Mobile organization administration">{[["Dashboard", "/dashboard"], ["Contacts", "/contacts"], ["Sequences", "/sequences"], ["Surveys", "/surveys"], ["Settings", "/settings"]].map(([label, suffix]) => { const href = `${base}${suffix}`; return <Link key={href} href={href} className={route.path === href ? "active" : ""}>{label}</Link>; })}</nav></div></div>; }

@@ -1,80 +1,24 @@
-import { firebaseConfigured } from "./firebase";
+import { AppShell, OrganizationShell, PublicShell } from "./components/shells";
+import { AuthProvider } from "./context/AuthContext";
+import { OrganizationProvider } from "./context/OrganizationContext";
+import { AuthPage, InvitationPage } from "./pages/AuthPages";
+import { CustomerPage } from "./pages/AppPages";
+import { AddContact, ContactDetail, OrganizationPage } from "./pages/OrgPages";
+import { MarketingHome, PublicExperience, PublicInfoPage, PublicOfferDetail, PublicOffersPage, PublicSurvey, ReferralLanding } from "./pages/PublicPages";
+import { OrganizationProtected, Protected, useRoute } from "./router";
+import { EmptyState } from "./components/ui";
 
-const stages = [
-  "Marketing Page",
-  "Offers",
-  "Registration + Onboarding",
-  "The App Experience",
-  "Secondary Experience",
-  "Upsells + Recurring Offer",
-  "Feedback + Referral",
-];
-
-const services = [
-  ["Firebase", "App platform"],
-  ["Stripe", "Payments + subscriptions"],
-  ["Twilio + SendGrid", "SMS + email"],
-  ["GitHub", "Source + CI/CD"],
-];
-
-export default function App() {
-  return (
-    <div className="page-shell">
-      <header className="site-header">
-        <a className="brand" href="#top" aria-label="Nurture home">
-          Nurture
-        </a>
-        <span className={`status ${firebaseConfigured ? "ready" : "pending"}`}>
-          <span aria-hidden="true" />
-          {firebaseConfigured ? "Firebase connected" : "Firebase config pending"}
-        </span>
-      </header>
-
-      <main id="top">
-        <section className="hero">
-          <p className="eyebrow">Customer lifecycle platform</p>
-          <h1>One foundation for the entire customer journey.</h1>
-          <p className="lede">
-            Nurture connects acquisition, onboarding, the app experience,
-            recurring value, feedback, and referral in one coherent platform.
-          </p>
-        </section>
-
-        <section className="stage-card" aria-labelledby="pipeline-title">
-          <div className="section-heading">
-            <p className="eyebrow">Foundation</p>
-            <h2 id="pipeline-title">Seven-Stage Customer Pipeline</h2>
-          </div>
-          <ol className="pipeline">
-            {stages.map((stage, index) => (
-              <li key={stage}>
-                <span className="stage-number">{index + 1}</span>
-                <span>{stage}</span>
-              </li>
-            ))}
-          </ol>
-        </section>
-
-        <section className="stack-section" aria-labelledby="stack-title">
-          <div className="section-heading">
-            <p className="eyebrow">Selected stack</p>
-            <h2 id="stack-title">Streamlined by design.</h2>
-          </div>
-          <div className="service-grid">
-            {services.map(([name, role]) => (
-              <article className="service-card" key={name}>
-                <h3>{name}</h3>
-                <p>{role}</p>
-              </article>
-            ))}
-          </div>
-        </section>
-      </main>
-
-      <footer>
-        <span>Nurture</span>
-        <span>nurture.accelanalysis.com</span>
-      </footer>
-    </div>
-  );
+function Routes() { const route = useRoute(); const [first, second, third, fourth] = route.segments;
+  if (route.path === "/") return <PublicShell><MarketingHome /></PublicShell>;
+  if (["/features", "/how-it-works", "/about", "/help", "/contact", "/privacy", "/terms"].includes(route.path)) return <PublicShell><PublicInfoPage path={route.path} /></PublicShell>;
+  if (route.path === "/offers") return <PublicShell><PublicOffersPage /></PublicShell>;
+  if (first === "offers" && second) return <PublicShell><PublicOfferDetail offerId={second} /></PublicShell>;
+  if (route.path === "/experience") return <PublicShell><PublicExperience /></PublicShell>;
+  if (first === "r" && second) return <PublicShell><ReferralLanding code={second} /></PublicShell>;
+  if (first === "survey" && second) return <PublicShell><PublicSurvey surveyId={second} /></PublicShell>;
+  if (route.path === "/login") return <AuthPage mode="login" />; if (route.path === "/register") return <AuthPage mode="register" />; if (route.path === "/forgot-password") return <AuthPage mode="forgot" />; if (route.path === "/verify-email") return <AuthPage mode="verify" />; if (first === "invite" && second) return <InvitationPage invitationId={second} />;
+  if (first === "app") return <Protected><AppShell><CustomerPage path={route.path} /></AppShell></Protected>;
+  if (first === "org" && second) { const organizationId = second; const section = third || "overview"; if (section === "contacts" && fourth === "new") return <OrganizationProtected><OrganizationShell organizationId={organizationId}><AddContact organizationId={organizationId} /></OrganizationShell></OrganizationProtected>; if (section === "contacts" && fourth) return <OrganizationProtected><OrganizationShell organizationId={organizationId}><ContactDetail organizationId={organizationId} contactId={fourth} /></OrganizationShell></OrganizationProtected>; return <OrganizationProtected><OrganizationShell organizationId={organizationId}><OrganizationPage organizationId={organizationId} section={section} /></OrganizationShell></OrganizationProtected>; }
+  return <PublicShell><section className="content-width page-section"><EmptyState title="Page not found" description="This route is not part of the Nurture skeleton." /></section></PublicShell>;
 }
+export default function App() { return <AuthProvider><OrganizationProvider><Routes /></OrganizationProvider></AuthProvider>; }
