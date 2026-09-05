@@ -10,16 +10,18 @@ export type IdentityLifecycleEventType =
   | "onboarding.completed";
 
 export interface IdentityLifecycleSignal {
-  signalId: string;
+  eventId: string;
   eventType: IdentityLifecycleEventType;
   schemaVersion: 1;
   occurredAt: string;
-  source: "browser";
+  transport: "browser";
+  trust: "client-observed";
   correlationId: string;
-  identityId?: string;
-  customerId?: string;
-  leadId?: string;
-  properties: Record<string, string | number | boolean | null>;
+  idempotencyKey: string;
+  identityIdHint?: string;
+  customerIdHint?: string;
+  leadIdHint?: string;
+  payload: Record<string, string | number | boolean | null>;
 }
 
 const CORRELATION_KEY = "nurture-lifecycle-correlation";
@@ -40,18 +42,23 @@ function correlationId() {
 
 export function emitIdentityLifecycleSignal(
   eventType: IdentityLifecycleEventType,
-  subject: Pick<IdentityLifecycleSignal, "identityId" | "customerId" | "leadId"> = {},
-  properties: IdentityLifecycleSignal["properties"] = {},
+  subject: { identityId?: string; customerId?: string; leadId?: string } = {},
+  payload: IdentityLifecycleSignal["payload"] = {},
 ): IdentityLifecycleSignal {
+  const eventId = createId("event");
   const signal: IdentityLifecycleSignal = {
-    signalId: createId("signal"),
+    eventId,
     eventType,
     schemaVersion: 1,
     occurredAt: new Date().toISOString(),
-    source: "browser",
+    transport: "browser",
+    trust: "client-observed",
     correlationId: correlationId(),
-    ...subject,
-    properties,
+    idempotencyKey: eventId,
+    ...(subject.identityId ? { identityIdHint: subject.identityId } : {}),
+    ...(subject.customerId ? { customerIdHint: subject.customerId } : {}),
+    ...(subject.leadId ? { leadIdHint: subject.leadId } : {}),
+    payload,
   };
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent<IdentityLifecycleSignal>(identityLifecycleSignalEvent, { detail: signal }));

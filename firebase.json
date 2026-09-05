@@ -1,11 +1,5 @@
 {
   "auth": {
-    "authorizedDomains": [
-      "localhost",
-      "nurture-12398.firebaseapp.com",
-      "nurture-12398.web.app",
-      "nurture.accelanalysis.com"
-    ],
     "providers": {
       "anonymous": true,
       "emailPassword": true
