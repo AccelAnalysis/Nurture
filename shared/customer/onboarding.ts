@@ -180,7 +180,7 @@ export function completeOnboardingStep(
   return {
     progress,
     stepCompletedNow: true,
-    onboardingCompletedNow: progress.status === "complete" && current.status !== "complete",
+    onboardingCompletedNow: progress.status === "complete",
   };
 }
 
