@@ -60,8 +60,11 @@ jobs:
           assert actual==expected, f'Reviewed tree mismatch: {actual}'
           print('Exact reviewed tree verified:', actual)
           PY
+          # Actions lacks workflows permission. Preserve workflow definitions unchanged;
+          # the authorized connected repository account applies those changes separately.
+          git restore --source="$GITHUB_SHA" --staged --worktree .github/workflows
           TREE=$(git write-tree)
-          COMMIT=$(git commit-tree "$TREE" -p "$GITHUB_SHA" -p d02744a581a12c8a1934edc507d1709d14a0ec3e -p 5d671dcbe5514415b9da9c5de3c51a010b18faa5 -p 8a61e614cc37c995607595bc14e4e4c5fa8847ae -p 70d15275eac4e0ae8413afe0a575ac932cbd2edd -p d7596600ea1828bc4825251349d96475e344176d -p e773be0661516317bd514252e357346e3c244016 -m 'Release 1: reconcile Tracks A-F with gated Hosting and shared trust contracts')
+          COMMIT=$(git commit-tree "$TREE" -p "$GITHUB_SHA" -p d02744a581a12c8a1934edc507d1709d14a0ec3e -p 5d671dcbe5514415b9da9c5de3c51a010b18faa5 -p 8a61e614cc37c995607595bc14e4e4c5fa8847ae -p 70d15275eac4e0ae8413afe0a575ac932cbd2edd -p d7596600ea1828bc4825251349d96475e344176d -p e773be0661516317bd514252e357346e3c244016 -m 'Release 1: reconcile Tracks A-F application source with shared trust contracts')
           git reset --hard "$COMMIT"
           git checkout -B release/1-integration "$COMMIT"
           git push origin HEAD:release/1-integration
