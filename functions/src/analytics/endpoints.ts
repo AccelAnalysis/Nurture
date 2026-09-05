@@ -20,7 +20,6 @@ const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(valu
 const rec = (value: unknown): Record<string, unknown> | null => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
 const str = (value: unknown) => typeof value === "string" && value.length ? value : undefined;
 const num = (value: unknown) => typeof value === "number" && Number.isSafeInteger(value) ? value : undefined;
-const source = (value: unknown): LifecycleEventSource => value === "browser" || value === "domain_action" || value === "provider_webhook" || value === "scheduler" || value === "administrator" ? value : "trusted_server";
 function orgRef(organizationId: string) { return db.collection("organizations").doc(organizationId); }
 function measurementEvent(input: {
   eventType: string; eventId: string; organizationId: string; dataMode: MetricQuery["dataMode"]; occurredAt: string;
@@ -39,8 +38,9 @@ function completeCoverage(query: MetricQuery, from: string, through: string, che
   return { organizationId: query.organizationId, dataMode: query.dataMode, bindingVersion: 1, from, through, checkedAt, complete };
 }
 function anonymousCalendarMonth(from: string, to: string) {
-  const start = new Date(from); if (!isUtc(from) || !isUtc(to) || start.getUTCDate() !== 1 || start.getUTCHours() || start.getUTCMinutes() || start.getUTCSeconds() || start.getUTCMilliseconds()) return false;
-  const next = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 1)).toISOString(); return to === next;
+  const start = new Date(from);
+  if (!isUtc(from) || !isUtc(to) || start.getUTCDate() !== 1 || start.getUTCHours() || start.getUTCMinutes() || start.getUTCSeconds() || start.getUTCMilliseconds()) return false;
+  return to === new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 1)).toISOString();
 }
 function subscriptionFromRaw(raw: Record<string, unknown>, organizationId: string): MeasurementSubscriptionSnapshot | null {
   const id = str(raw.id) ?? str(raw.providerSubscriptionId); const offerId = str(raw.offerId); const billingInterval = raw.billingInterval; const currency = str(raw.currency); const amount = num(raw.unitAmountMinor); const status = str(raw.status); const trustedAt = str(raw.trustedAt) ?? str(raw.updatedAt);
@@ -70,6 +70,8 @@ async function readSources(query: MetricQuery): Promise<MeasurementInput> {
   const org = orgRef(query.organizationId); const coverage: Record<string, SourceCoverage> = {}; const events: MeasurementEvent[] = []; const links: VerifiedSubjectLink[] = [];
   const cohort = definitions.some((d) => d.timeBasis === "cohort-entry"); const upper = new Date(Math.min(Date.parse(calculatedAt), Date.parse(query.to) + (cohort ? query.observationDays * 86_400_000 : 0))).toISOString();
   let rejected = 0; let truncated = false;
+  let openingSubscriptions: MeasurementInput["openingSubscriptions"];
+  let closingSubscriptions: MeasurementInput["closingSubscriptions"];
 
   const lifecycleTypes = new Set([...selectorTypes].filter((type) => !type.startsWith("measurement.")));
   if (lifecycleTypes.size) {
@@ -81,6 +83,24 @@ async function readSources(query: MetricQuery): Promise<MeasurementInput> {
       try { events.push(validateLifecycleEventEnvelope(raw)); } catch { bad.add(String(raw.eventType)); rejected++; }
     }
     for (const type of lifecycleTypes) coverage[type] = completeCoverage(query, query.from, upper, calculatedAt, !limited && !bad.has(type));
+  }
+
+  const referralTypes = [...lifecycleTypes].filter((type) => type.startsWith("referral."));
+  if (referralTypes.length) {
+    const rows = await org.collection("feedbackModes").doc(query.dataMode).collection("referralAttributions").limit(MAX_RUNTIME_RECORDS + 1).get();
+    let complete = rows.size <= MAX_RUNTIME_RECORDS; const attributions = new Map<string, { programId: string; versionId: string }>();
+    for (const doc of rows.docs.slice(0, MAX_RUNTIME_RECORDS)) {
+      const raw = doc.data(); const id = str(raw.id) ?? doc.id; const programId = str(raw.programId); const versionId = str(raw.versionId);
+      if (!id || !programId || !versionId) { complete = false; continue; }
+      attributions.set(id, { programId, versionId });
+    }
+    for (let i = 0; i < events.length; i++) {
+      const current = events[i]; if (!current.eventType.startsWith("referral.")) continue;
+      const referralId = str(current.payload.referralId); const attribution = referralId ? attributions.get(referralId) : undefined;
+      if (!referralId || !attribution) { complete = false; continue; }
+      events[i] = { ...current, payload: { ...current.payload, programId: attribution.programId, versionId: attribution.versionId } };
+    }
+    for (const type of referralTypes) if (coverage[type]) coverage[type] = { ...coverage[type], complete: coverage[type].complete && complete };
   }
 
   if (sources.has("identity.links")) {
@@ -144,7 +164,7 @@ async function readSources(query: MetricQuery): Promise<MeasurementInput> {
       const raw = doc.data(); const intent = rec(raw.intent); const attempts = Array.isArray(raw.attempts) ? raw.attempts.map(rec).filter((item): item is Record<string, unknown> => Boolean(item)) : [];
       if (!intent || intent.mode !== query.dataMode || !attempts.length) continue; const occurredAt = str(attempts[0].startedAt); if (!occurredAt || occurredAt < query.from || occurredAt >= upper) continue;
       const recipient = rec(intent.recipient); const customerId = recipient?.kind === "customer" ? str(recipient.id) : undefined; const trigger = rec(intent.trigger); const runId = str(trigger?.runId); const run = runId ? runMap.get(runId) ?? acquisitionMap.get(runId) : undefined;
-      events.push(measurementEvent({ eventType: "measurement.communication.attempted", eventId: `m-message-${doc.id}`, organizationId: query.organizationId, dataMode: query.dataMode, occurredAt, customerId, subjectId: customerId, subjectKind: customerId ? "customer" : "organization", payload: { communicationId: str(intent.messageId) ?? doc.id, ...(runId ? { runId } : {}), ...(str(run?.automationId) ? { automationId: str(run?.automationId)! } : {}), ...(num(run?.automationVersion) !== undefined ? { automationVersion: num(run?.automationVersion)! } : str(run?.automationVersionId) ? { automationVersion: str(run?.automationVersionId)! } : {}) } }));
+      events.push(measurementEvent({ eventType: "measurement.communication.attempted", eventId: `m-message-${doc.id}`, organizationId: query.organizationId, dataMode: query.dataMode, occurredAt, customerId, subjectId: customerId ?? query.organizationId, subjectKind: customerId ? "customer" : "organization", payload: { communicationId: str(intent.messageId) ?? doc.id, ...(runId ? { runId } : {}), ...(str(run?.automationId) ? { automationId: str(run?.automationId)! } : {}), ...(num(run?.automationVersion) !== undefined ? { automationVersion: num(run?.automationVersion)! } : str(run?.automationVersionId) ? { automationVersion: str(run?.automationVersionId)! } : {}) } }));
     }
     coverage["measurement.communication.attempted"] = completeCoverage(query, query.from, upper, calculatedAt, complete);
   }
@@ -185,14 +205,10 @@ async function readSources(query: MetricQuery): Promise<MeasurementInput> {
     }
     if (sources.has("subscriptions.opening") || sources.has("subscriptions.closing")) {
       const opening = reconstructSubscriptions(history, query.organizationId, query.from); const closing = reconstructSubscriptions(history, query.organizationId, query.to); const complete = historyValid && opening.valid && closing.valid;
-      if (sources.has("subscriptions.opening")) { coverage["subscriptions.opening"] = completeCoverage(query, query.from, query.to, calculatedAt, complete); }
-      if (sources.has("subscriptions.closing")) { coverage["subscriptions.closing"] = completeCoverage(query, query.from, query.to, calculatedAt, complete); }
-      const base = { organizationId: query.organizationId, dataMode: query.dataMode, complete } as const;
-      Object.assign(base, {});
-      // The observedAt value is the exact as-of boundary requested by the calculation.
-      (base as unknown);
-      var openingSubscriptions = { organizationId: query.organizationId, dataMode: query.dataMode, observedAt: query.from, complete, records: opening.records };
-      var closingSubscriptions = { organizationId: query.organizationId, dataMode: query.dataMode, observedAt: query.to, complete, records: closing.records };
+      if (sources.has("subscriptions.opening")) coverage["subscriptions.opening"] = completeCoverage(query, query.from, query.to, calculatedAt, complete);
+      if (sources.has("subscriptions.closing")) coverage["subscriptions.closing"] = completeCoverage(query, query.from, query.to, calculatedAt, complete);
+      openingSubscriptions = { organizationId: query.organizationId, dataMode: query.dataMode, observedAt: query.from, complete, records: opening.records };
+      closingSubscriptions = { organizationId: query.organizationId, dataMode: query.dataMode, observedAt: query.to, complete, records: closing.records };
     }
   }
 
@@ -206,7 +222,7 @@ async function readSources(query: MetricQuery): Promise<MeasurementInput> {
     coverage["subscriptions.current"] = completeCoverage(query, query.from, observedAt, calculatedAt, complete);
   }
 
-  return { events, coverage, links, rejected, truncated, calculatedAt, ...(currentSubscriptions ? { currentSubscriptions } : {}), ...(typeof openingSubscriptions !== "undefined" ? { openingSubscriptions } : {}), ...(typeof closingSubscriptions !== "undefined" ? { closingSubscriptions } : {}) };
+  return { events, coverage, links, rejected, truncated, calculatedAt, ...(currentSubscriptions ? { currentSubscriptions } : {}), ...(openingSubscriptions ? { openingSubscriptions } : {}), ...(closingSubscriptions ? { closingSubscriptions } : {}) };
 }
 
 async function saveDerived(report: AnalyticsReport, uid: string, requestId: string) {
