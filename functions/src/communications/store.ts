@@ -18,6 +18,13 @@ import {
 import { validateEmailTemplateContent } from "../../../shared/communications/render.js";
 import { db } from "../firebase.js";
 import { shouldApplyProviderTransition } from "./delivery-state.js";
+import {
+  communicationEventTypeForStatus,
+  createCommunicationEventOutboxRecord,
+  type CommunicationEventOutboxRecord,
+  type CommunicationLifecycleEventSource,
+  type CommunicationLifecycleEventType,
+} from "./outbox.js";
 
 interface StoredCommunicationTemplate {
   schemaVersion: typeof COMMUNICATION_SCHEMA_VERSION;
@@ -47,6 +54,14 @@ interface ProviderEventMarker {
   reason?: string;
 }
 
+export interface MessageLifecycleOutcomeWrite {
+  eventType: CommunicationLifecycleEventType;
+  source: CommunicationLifecycleEventSource;
+  occurredAt?: string;
+  idempotencySuffix?: string;
+  reason?: string;
+}
+
 function organizationRef(organizationId: string) {
   return db.collection("organizations").doc(organizationId);
 }
@@ -69,6 +84,14 @@ function messageRef(organizationId: string, messageId: string) {
 
 function effectRef(organizationId: string, effectId: string) {
   return organizationRef(organizationId).collection("communicationEffects").doc(opaqueKey(effectId));
+}
+
+function communicationOutboxCollection(organizationId: string) {
+  return organizationRef(organizationId).collection("communicationEventOutbox");
+}
+
+function communicationOutboxRef(organizationId: string, outboxId: string) {
+  return communicationOutboxCollection(organizationId).doc(outboxId);
 }
 
 function providerMessageRef(providerMessageId: string) {
@@ -135,6 +158,22 @@ function defaultDraft(templateId: CommunicationTemplateId): EmailTemplateDraft {
     updatedAt: template.version,
     inheritedFromDefaultVersion: template.version,
   };
+}
+
+function writeOutbox(
+  transaction: FirebaseFirestore.Transaction,
+  record: MessageDeliveryRecord,
+  outcome: MessageLifecycleOutcomeWrite,
+) {
+  const outbox = createCommunicationEventOutboxRecord({
+    record,
+    eventType: outcome.eventType,
+    source: outcome.source,
+    occurredAt: outcome.occurredAt ?? record.updatedAt,
+    idempotencySuffix: outcome.idempotencySuffix,
+    reason: outcome.reason,
+  });
+  if (outbox) transaction.set(communicationOutboxRef(record.intent.organizationId, outbox.outboxId), outbox);
 }
 
 async function templateVersions(organizationId: string, templateId: CommunicationTemplateId) {
@@ -319,10 +358,23 @@ export async function createMessageIntent(intent: MessageIntent): Promise<{ crea
   return { created: result.created, record: snapshot.data() as MessageDeliveryRecord };
 }
 
-export async function updateMessageRecord(organizationId: string, messageId: string, patch: Partial<MessageDeliveryRecord>) {
+export async function updateMessageRecord(
+  organizationId: string,
+  messageId: string,
+  patch: Partial<MessageDeliveryRecord>,
+  outcome?: MessageLifecycleOutcomeWrite,
+) {
   const updatedAt = new Date().toISOString();
-  await messageRef(organizationId, messageId).set({ ...patch, updatedAt }, { merge: true });
-  const snapshot = await messageRef(organizationId, messageId).get();
+  const ref = messageRef(organizationId, messageId);
+  await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(ref);
+    if (!snapshot.exists) throw new Error("Communication message not found.");
+    const current = snapshot.data() as MessageDeliveryRecord;
+    const next = { ...current, ...patch, updatedAt } as MessageDeliveryRecord;
+    transaction.set(ref, { ...patch, updatedAt }, { merge: true });
+    if (outcome) writeOutbox(transaction, next, { ...outcome, occurredAt: outcome.occurredAt ?? updatedAt });
+  });
+  const snapshot = await ref.get();
   if (!snapshot.exists) throw new Error("Communication message not found after update.");
   return snapshot.data() as MessageDeliveryRecord;
 }
@@ -344,17 +396,37 @@ export async function registerProviderAcceptance(input: {
     recipientHash: input.recipientHash,
     createdAt: input.acceptedAt,
   };
+  const ref = messageRef(input.organizationId, input.messageId);
   await db.runTransaction(async (transaction) => {
-    transaction.set(providerMessageRef(canonical), mapping);
-    transaction.set(messageRef(input.organizationId, input.messageId), {
-      status: "accepted" satisfies MessageDeliveryStatus,
+    const snapshot = await transaction.get(ref);
+    if (!snapshot.exists) throw new Error("Communication message not found before provider acceptance was recorded.");
+    const current = snapshot.data() as MessageDeliveryRecord;
+    const next: MessageDeliveryRecord = {
+      ...current,
+      status: "accepted",
       statusReason: "provider-accepted",
       attempts: input.attempts,
       provider: "sendgrid",
       providerMessageId: canonical,
       acceptedAt: input.acceptedAt,
       updatedAt: input.acceptedAt,
+    };
+    transaction.set(providerMessageRef(canonical), mapping);
+    transaction.set(ref, {
+      status: next.status,
+      statusReason: next.statusReason,
+      attempts: next.attempts,
+      provider: next.provider,
+      providerMessageId: next.providerMessageId,
+      acceptedAt: next.acceptedAt,
+      updatedAt: next.updatedAt,
     }, { merge: true });
+    writeOutbox(transaction, next, {
+      eventType: "communication.provider_accepted",
+      source: "trusted_server",
+      occurredAt: input.acceptedAt,
+      reason: "provider-accepted",
+    });
   });
 }
 
@@ -406,14 +478,31 @@ export async function applyVerifiedProviderEvent(input: {
       return { state: "unmatched" as const };
     }
     const current = target.data() as MessageDeliveryRecord;
-    if (input.nextStatus && shouldApplyProviderTransition(current.status, input.nextStatus)) {
-      const patch: Record<string, unknown> = {
+    const shouldTransition = Boolean(input.nextStatus && shouldApplyProviderTransition(current.status, input.nextStatus));
+    if (input.nextStatus && shouldTransition) {
+      const next: MessageDeliveryRecord = {
+        ...current,
         status: input.nextStatus,
         statusReason: input.statusReason ?? `sendgrid-${input.eventType}`,
+        ...(input.nextStatus === "delivered" ? { deliveredAt: input.occurredAt } : {}),
         updatedAt: receivedAt,
       };
-      if (input.nextStatus === "delivered") patch.deliveredAt = input.occurredAt;
-      transaction.set(targetRef, patch, { merge: true });
+      transaction.set(targetRef, {
+        status: next.status,
+        statusReason: next.statusReason,
+        ...(input.nextStatus === "delivered" ? { deliveredAt: input.occurredAt } : {}),
+        updatedAt: receivedAt,
+      }, { merge: true });
+      const lifecycleEventType = communicationEventTypeForStatus(input.nextStatus);
+      if (lifecycleEventType) {
+        writeOutbox(transaction, next, {
+          eventType: lifecycleEventType,
+          source: "provider_webhook",
+          occurredAt: input.occurredAt,
+          idempotencySuffix: input.providerEventId,
+          reason: input.statusReason ?? `sendgrid-${input.eventType}`,
+        });
+      }
     }
     if (input.suppressGlobally) {
       transaction.set(providerSuppressionRef(mapping.recipientHash), {
@@ -424,8 +513,39 @@ export async function applyVerifiedProviderEvent(input: {
       }, { merge: true });
     }
     transaction.set(markerRef, { ...baseMarker, state: "applied" });
-    return { state: "applied" as const, organizationId: mapping.organizationId, messageId: mapping.messageId, previousStatus: current.status };
+    return { state: "applied" as const, organizationId: mapping.organizationId, messageId: mapping.messageId, previousStatus: current.status, transitioned: shouldTransition };
   });
+}
+
+export async function listPendingCommunicationEventOutbox(organizationId: string, limit = 50) {
+  const safeLimit = Math.max(1, Math.min(limit, 100));
+  const snapshot = await communicationOutboxCollection(organizationId).where("state", "==", "pending").limit(safeLimit).get();
+  return snapshot.docs.map((doc) => doc.data() as CommunicationEventOutboxRecord);
+}
+
+export async function markCommunicationEventOutboxAppended(input: {
+  organizationId: string;
+  outboxId: string;
+  eventId: string;
+  appendedAt: string;
+}) {
+  await communicationOutboxRef(input.organizationId, input.outboxId).set({
+    state: "appended",
+    appendedEventId: input.eventId,
+    appendedAt: input.appendedAt,
+    failureReason: null,
+  }, { merge: true });
+}
+
+export async function markCommunicationEventOutboxFailed(input: {
+  organizationId: string;
+  outboxId: string;
+  reason: string;
+}) {
+  await communicationOutboxRef(input.organizationId, input.outboxId).set({
+    state: "failed",
+    failureReason: input.reason.slice(0, 500),
+  }, { merge: true });
 }
 
 export async function listCommunicationHistory(input: {
