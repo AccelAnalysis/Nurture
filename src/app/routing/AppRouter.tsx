@@ -3,6 +3,13 @@ import { OrganizationShell, ParticipantShell, PlatformAdminShell, PublicShell } 
 import { EmptyState, LoadingState } from "../../components/ui";
 import { useOrganization } from "../../context/OrganizationContext";
 import { usePlatform } from "../../context/PlatformContext";
+import {
+  OrganizationOffersPage,
+  ParticipantBillingPage,
+  ParticipantOffersPage,
+  PublicOfferDetail as BillingPublicOfferDetail,
+  PublicOffersPage as BillingPublicOffersPage,
+} from "../../features/billing/pages";
 import { AuthenticatedRoute, IdentityRouteBoundary, isIdentityRoute } from "../../features/identity/IdentityBoundary";
 import { useAuth } from "../../features/identity/auth";
 import { OnboardingRouteBoundary } from "../../features/onboarding/OnboardingBoundary";
@@ -12,7 +19,7 @@ import { PlatformAdminRoute } from "../../features/platform/PlatformAdminRoute";
 import { CustomerPage } from "../../pages/AppPages";
 import { AddContact, ContactDetail, OrganizationPage } from "../../pages/OrgPages";
 import { PlatformPage } from "../../pages/PlatformPages";
-import { MarketingHome, PublicExperience, PublicInfoPage, PublicOfferDetail, PublicOffersPage, PublicSurvey, ReferralLanding } from "../../pages/PublicPages";
+import { MarketingHome, PublicExperience, PublicInfoPage, PublicSurvey, ReferralLanding } from "../../pages/PublicPages";
 import { navigate, useRoute } from "../../router";
 import { organizationSectionCapability, platformSectionCapability } from "../../security/authorization";
 
@@ -76,8 +83,8 @@ export function AppRouter() {
 
   if (route.path === "/") return <PublicShell><MarketingHome /></PublicShell>;
   if (publicInfoRoutes.includes(route.path)) return <PublicShell><PublicInfoPage path={route.path} /></PublicShell>;
-  if (route.path === "/offers") return <PublicShell><PublicOffersPage /></PublicShell>;
-  if (first === "offers" && second) return <PublicShell><PublicOfferDetail offerId={second} /></PublicShell>;
+  if (route.path === "/offers") return <PublicShell><BillingPublicOffersPage /></PublicShell>;
+  if (first === "offers" && second) return <PublicShell><BillingPublicOfferDetail offerId={second} /></PublicShell>;
   if (route.path === "/experience") return <ParticipantShell mode="trial"><PublicExperience /></ParticipantShell>;
   if (first === "r" && second) return <PublicShell><ReferralLanding code={second} /></PublicShell>;
   if (first === "survey" && second) return <PublicShell><PublicSurvey surveyId={second} /></PublicShell>;
@@ -86,13 +93,16 @@ export function AppRouter() {
   if (first === "onboarding") return <OnboardingRouteBoundary step={second} />;
 
   if (first === "app") {
+    const content = route.path === "/app/offers"
+      ? <ParticipantOffersPage />
+      : route.path === "/app/billing"
+        ? <ParticipantBillingPage />
+        : participantRoutes.has(route.path)
+          ? <CustomerPage path={route.path} />
+          : <ParticipantStateView state="unavailable" title="Participant destination unavailable" description="This /app route is not registered with the participant application skeleton." />;
     return (
       <AuthenticatedRoute>
-        <AuthenticatedParticipant>
-          {participantRoutes.has(route.path)
-            ? <CustomerPage path={route.path} />
-            : <ParticipantStateView state="unavailable" title="Participant destination unavailable" description="This /app route is not registered with the participant application skeleton." />}
-        </AuthenticatedParticipant>
+        <AuthenticatedParticipant>{content}</AuthenticatedParticipant>
       </AuthenticatedRoute>
     );
   }
@@ -107,11 +117,13 @@ export function AppRouter() {
     const section = fourth || "overview";
     const detail = fifth;
     const capability = organizationSectionCapability[section] ?? "workspace.view";
-    const content = section === "contacts" && detail === "new"
-      ? <AddContact organizationId={organizationId} />
-      : section === "contacts" && detail
-        ? <ContactDetail organizationId={organizationId} contactId={detail} />
-        : <OrganizationPage organizationId={organizationId} section={section} />;
+    const content = section === "offers"
+      ? <OrganizationOffersPage organizationId={organizationId} />
+      : section === "contacts" && detail === "new"
+        ? <AddContact organizationId={organizationId} />
+        : section === "contacts" && detail
+          ? <ContactDetail organizationId={organizationId} contactId={detail} />
+          : <OrganizationPage organizationId={organizationId} section={section} />;
     const effectiveCapability = section === "contacts" && detail === "new" ? "contacts.manage" : capability;
 
     return (
