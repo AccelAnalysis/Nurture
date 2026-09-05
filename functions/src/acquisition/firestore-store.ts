@@ -64,6 +64,9 @@ function persistWithoutLease(job: AcquisitionJob) {
   const { lease: _lease, ...rest } = job;
   return JSON.parse(JSON.stringify(rest)) as Record<string, unknown>;
 }
+function explanation(at: string, reason: AcquisitionReasonCode, detail?: string) {
+  return { at, reason, ...(detail !== undefined ? { detail } : {}) };
+}
 
 export class FirestoreAcquisitionRuntimeStore implements AcquisitionRuntimeStore {
   async createEnrollmentIfAbsent(input: CreateEnrollmentInput): Promise<CreateEnrollmentResult> {
@@ -127,11 +130,7 @@ export class FirestoreAcquisitionRuntimeStore implements AcquisitionRuntimeStore
           status: "unknown-outcome",
           lease: undefined,
           updatedAt: input.leasedAt,
-          lastExplanation: {
-            at: input.leasedAt,
-            reason: "provider-unknown-outcome",
-            detail: "The prior worker lease expired after provider submission began; blind retry is prohibited.",
-          },
+          lastExplanation: explanation(input.leasedAt, "provider-unknown-outcome", "The prior worker lease expired after provider submission began; blind retry is prohibited."),
         };
         transaction.set(ref, persistWithoutLease(next), { merge: false });
         return { status: "unknown-outcome", job: next };
@@ -146,7 +145,7 @@ export class FirestoreAcquisitionRuntimeStore implements AcquisitionRuntimeStore
           expiresAt: input.leaseExpiresAt,
         },
         updatedAt: input.leasedAt,
-        lastExplanation: { at: input.leasedAt, reason: "scheduled", detail: `Leased by ${input.workerId}.` },
+        lastExplanation: explanation(input.leasedAt, "scheduled", `Leased by ${input.workerId}.`),
       };
       transaction.set(ref, JSON.parse(JSON.stringify(next)), { merge: false });
       return { status: "leased", job: next };
@@ -182,7 +181,7 @@ export class FirestoreAcquisitionRuntimeStore implements AcquisitionRuntimeStore
           status: "suppressed",
           lease: undefined,
           updatedAt: input.at,
-          lastExplanation: { at: input.at, reason: "frequency-cap-reached", detail: "The bounded provider-effect frequency cap is full." },
+          lastExplanation: explanation(input.at, "frequency-cap-reached", "The bounded provider-effect frequency cap is full."),
         };
         transaction.set(ref, persistWithoutLease(next), { merge: false });
         return next;
@@ -220,7 +219,7 @@ export class FirestoreAcquisitionRuntimeStore implements AcquisitionRuntimeStore
         status: input.status,
         lease: undefined,
         updatedAt: input.at,
-        lastExplanation: { at: input.at, reason: input.reason, detail: input.detail },
+        lastExplanation: explanation(input.at, input.reason, input.detail),
         ...(input.dueAt ? { dueAt: input.dueAt } : {}),
         ...(input.providerAttemptCount !== undefined ? { providerAttemptCount: input.providerAttemptCount } : {}),
         ...(input.providerMessageId ? { providerMessageId: input.providerMessageId } : {}),
@@ -285,7 +284,7 @@ export class FirestoreAcquisitionRuntimeStore implements AcquisitionRuntimeStore
       batch.set(item.ref, {
         status: "cancelled",
         updatedAt: input.at,
-        lastExplanation: { at: input.at, reason: input.reason, detail: input.detail },
+        lastExplanation: explanation(input.at, input.reason, input.detail),
         lease: FieldValue.delete(),
       }, { merge: true });
     }
@@ -307,7 +306,7 @@ export class FirestoreAcquisitionRuntimeStore implements AcquisitionRuntimeStore
     if (records.some((job) => job.status === "unknown-outcome")) { status = "held"; reason = "provider-unknown-outcome"; }
     else if (records.some((job) => job.status === "failed")) { status = "failed"; reason = "runtime-error"; }
     else if (records.length && records.every((job) => job.status === "cancelled")) { status = "cancelled"; reason = records[0].lastExplanation.reason; }
-    const next: AcquisitionEnrollment = { ...enrollment, status, lastExplanation: { at: input.at, reason } };
+    const next: AcquisitionEnrollment = { ...enrollment, status, lastExplanation: explanation(input.at, reason) };
     await ref.set({ status, lastExplanation: next.lastExplanation }, { merge: true });
     return next;
   }
