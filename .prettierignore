@@ -1,0 +1,8 @@
+node_modules
+dist
+dist-demo
+playwright-report
+test-results
+package-lock.json
+firebase-debug.log
+firestore-debug.log

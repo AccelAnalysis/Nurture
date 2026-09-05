@@ -1,0 +1,8 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Upload and attachment delivery are not implemented. Keep Storage closed until
+    // authenticated ownership, tenant scope, file size/type, and malware handling are reviewed.
+    match /{allPaths=**} { allow read, write: if false; }
+  }
+}
