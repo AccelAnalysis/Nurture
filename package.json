@@ -13,6 +13,7 @@
     "prebuild": "npm run brand:sync",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "preview": "vite preview",
     "firebase:emulate": "npx -y firebase-tools@latest emulators:start --only hosting",
     "firebase:preview": "npm run build && npx -y firebase-tools@latest hosting:channel:deploy bootstrap --project nurture-12398 --expires 7d",
@@ -28,6 +29,7 @@
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.1.1",
     "typescript": "^7.0.2",
-    "vite": "^8.2.2"
+    "vite": "^8.2.2",
+    "vitest": "^4.1.11"
   }
 }
