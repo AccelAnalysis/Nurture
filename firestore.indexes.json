@@ -127,7 +127,7 @@
       "collectionGroup": "release3Runs",
       "queryScope": "COLLECTION_GROUP",
       "fields": [
-        { "fieldPath": "state", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "state", "order": "ASCENDING" },
         { "fieldPath": "dueAt", "order": "ASCENDING" }
       ]
     }
