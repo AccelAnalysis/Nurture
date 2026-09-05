@@ -2,7 +2,8 @@ import { createHash, createPublicKey, verify as verifySignature } from "node:cry
 import { onRequest } from "firebase-functions/v2/https";
 import type { MessageDeliveryStatus } from "../../../shared/communications/contracts.js";
 import { sendGridEventWebhookPublicKey } from "./config.js";
-import { applyVerifiedProviderEvent, hashRecipientEmail } from "./store.js";
+import { applyVerifiedProviderEvent, findProviderMessageMapping, hashRecipientEmail } from "./store.js";
+import { recordOrganizationMarketingSuppression } from "./suppression.js";
 
 interface SendGridEvent {
   event?: unknown;
@@ -16,6 +17,7 @@ export interface MappedSendGridEvent {
   nextStatus?: MessageDeliveryStatus;
   statusReason?: string;
   suppressGlobally: boolean;
+  suppressOrganizationMarketing: boolean;
 }
 
 export function verifySendGridEventWebhookSignature(input: {
@@ -39,14 +41,14 @@ export function verifySendGridEventWebhookSignature(input: {
 
 export function mapSendGridEvent(eventType: string): MappedSendGridEvent {
   switch (eventType) {
-    case "delivered": return { nextStatus: "delivered", statusReason: "sendgrid-delivered", suppressGlobally: false };
-    case "deferred": return { nextStatus: "deferred", statusReason: "sendgrid-deferred", suppressGlobally: false };
-    case "bounce": return { nextStatus: "bounced", statusReason: "sendgrid-bounce", suppressGlobally: true };
-    case "dropped": return { nextStatus: "dropped", statusReason: "sendgrid-dropped", suppressGlobally: false };
-    case "spamreport": return { nextStatus: "complained", statusReason: "sendgrid-spam-complaint", suppressGlobally: true };
-    case "unsubscribe":
-    case "group_unsubscribe": return { nextStatus: "unsubscribed", statusReason: "sendgrid-unsubscribe", suppressGlobally: true };
-    default: return { suppressGlobally: false };
+    case "delivered": return { nextStatus: "delivered", statusReason: "sendgrid-delivered", suppressGlobally: false, suppressOrganizationMarketing: false };
+    case "deferred": return { nextStatus: "deferred", statusReason: "sendgrid-deferred", suppressGlobally: false, suppressOrganizationMarketing: false };
+    case "bounce": return { nextStatus: "bounced", statusReason: "sendgrid-bounce", suppressGlobally: true, suppressOrganizationMarketing: false };
+    case "dropped": return { nextStatus: "dropped", statusReason: "sendgrid-dropped", suppressGlobally: false, suppressOrganizationMarketing: false };
+    case "spamreport": return { nextStatus: "complained", statusReason: "sendgrid-spam-complaint", suppressGlobally: true, suppressOrganizationMarketing: false };
+    case "unsubscribe": return { nextStatus: "unsubscribed", statusReason: "sendgrid-unsubscribe", suppressGlobally: true, suppressOrganizationMarketing: false };
+    case "group_unsubscribe": return { nextStatus: "unsubscribed", statusReason: "sendgrid-group-unsubscribe", suppressGlobally: false, suppressOrganizationMarketing: true };
+    default: return { suppressGlobally: false, suppressOrganizationMarketing: false };
   }
 }
 
@@ -99,16 +101,32 @@ export const sendGridEventWebhook = onRequest(async (request, response) => {
       rejected += 1;
       continue;
     }
-    const mapping = mapSendGridEvent(event.event);
+    const mapped = mapSendGridEvent(event.event);
+    const stableEventId = providerEventId(event, event.sg_message_id, index);
+    const eventRecipientHash = typeof event.email === "string" && event.email.trim() ? hashRecipientEmail(event.email) : undefined;
+
+    if (mapped.suppressOrganizationMarketing) {
+      const providerMapping = await findProviderMessageMapping(event.sg_message_id);
+      if (providerMapping && (!eventRecipientHash || eventRecipientHash === providerMapping.recipientHash)) {
+        await recordOrganizationMarketingSuppression({
+          organizationId: providerMapping.organizationId,
+          recipientHash: providerMapping.recipientHash,
+          reason: mapped.statusReason ?? "sendgrid-group-unsubscribe",
+          observedAt: occurredAt(event.timestamp),
+          providerEventId: stableEventId,
+        });
+      }
+    }
+
     const result = await applyVerifiedProviderEvent({
-      providerEventId: providerEventId(event, event.sg_message_id, index),
+      providerEventId: stableEventId,
       providerMessageId: event.sg_message_id,
       eventType: event.event,
       occurredAt: occurredAt(event.timestamp),
-      ...(typeof event.email === "string" && event.email.trim() ? { recipientHash: hashRecipientEmail(event.email) } : {}),
-      ...(mapping.nextStatus ? { nextStatus: mapping.nextStatus } : {}),
-      ...(mapping.statusReason ? { statusReason: mapping.statusReason } : {}),
-      suppressGlobally: mapping.suppressGlobally,
+      ...(eventRecipientHash ? { recipientHash: eventRecipientHash } : {}),
+      ...(mapped.nextStatus ? { nextStatus: mapped.nextStatus } : {}),
+      ...(mapped.statusReason ? { statusReason: mapped.statusReason } : {}),
+      suppressGlobally: mapped.suppressGlobally,
     });
     if (result.state === "applied" || result.state === "duplicate") applied += 1;
     else if (result.state === "unmatched") unmatched += 1;
