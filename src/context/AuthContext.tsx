@@ -29,7 +29,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let unsubscribe = () => undefined;
+    let unsubscribe: () => void = () => {};
     authService
       .initializePersistence()
       .then(() => {
