@@ -23,11 +23,7 @@ export type AcquisitionCatalogId =
 
 export type AcquisitionSubjectKind = "lead" | "customer";
 
-/**
- * Structurally identical to Track D's canonical CommunicationPurpose. Keep this
- * local alias only so the tracks can compile independently; the release finisher
- * may replace it with D's exported type during composition.
- */
+/** Structurally identical to Track D's canonical CommunicationPurpose. */
 export type AcquisitionMessagePurpose = "transactional" | "marketing";
 
 /** Structurally identical to Track D's approved Release 2 template IDs. */
@@ -87,11 +83,7 @@ export interface AcquisitionFrequencyPolicy {
   windowSeconds: number;
 }
 
-/**
- * Immutable published automation version consumed by the runtime. Draft storage,
- * publication, and configuration UI are separate concerns. Release 2 deliberately
- * supports only the bounded trigger/predicate/email-action vocabulary above.
- */
+/** Immutable published automation version consumed by the runtime. */
 export interface AcquisitionAutomationDefinition {
   schemaVersion: typeof ACQUISITION_AUTOMATION_SCHEMA_VERSION;
   organizationId: string;
@@ -220,11 +212,7 @@ export interface AcquisitionJob {
   status: AcquisitionJobStatus;
   providerAttemptCount: number;
   lease?: AcquisitionJobLease;
-  /**
-   * Persisted immediately before crossing the provider submission boundary.
-   * If a worker dies after this marker, recovery must classify the stale job as
-   * unknown-outcome rather than re-leasing it for a blind duplicate send.
-   */
+  /** Durable ambiguity/frequency reservation marker set immediately before provider submission. */
   providerSubmissionStartedAt?: string;
   providerSubmissionAttemptId?: string;
   providerMessageId?: string;
@@ -270,10 +258,7 @@ export interface AcquisitionStateReadInput {
 }
 
 export interface AcquisitionStatePort {
-  /**
-   * Composes current authoritative C/B/D state. Implementations must not use a
-   * stale lifecycle projection as permission to send.
-   */
+  /** Composes current authoritative C/B/D state; stale projections are not permission to send. */
   readCurrentState(input: AcquisitionStateReadInput): Promise<AcquisitionCurrentState>;
 }
 
@@ -339,11 +324,7 @@ export type AcquisitionEmailSubmitResult =
       providerRequestId?: string;
     };
 
-/**
- * Track D implements this boundary. `submit` must apply Track D's safety
- * evaluator again immediately before provider submission; the separate
- * `evaluate` call lets Track E record an explanation before dispatch.
- */
+/** Track D implements this boundary and re-evaluates immediately before provider submission. */
 export interface AcquisitionEmailDispatchPort {
   evaluate(input: AcquisitionEmailEligibilityInput): Promise<AcquisitionEmailEligibilityResult>;
   submit(input: AcquisitionEmailSubmitInput): Promise<AcquisitionEmailSubmitResult>;
@@ -383,11 +364,26 @@ export type LeaseJobResult =
   | { status: "unknown-outcome"; job: AcquisitionJob }
   | { status: "unavailable"; reason: "terminal" | "not-due" | "active-lease" | "missing" };
 
+/**
+ * Frequency admission must be checked inside the same atomic operation that
+ * writes the provider-submission ambiguity barrier. A count-before-write in the
+ * worker can oversubscribe the cap when workers run concurrently.
+ */
+export interface AcquisitionFrequencyAdmission {
+  organizationId: string;
+  subjectId: string;
+  dataMode: AnalyticsDataMode;
+  purpose: AcquisitionMessagePurpose;
+  since: string;
+  maxProviderAcceptedEffects: number;
+}
+
 export interface MarkProviderSubmissionStartedInput {
   jobId: string;
   leaseToken: string;
   at: string;
   attemptId: string;
+  frequencyAdmission: AcquisitionFrequencyAdmission;
 }
 
 export interface TransitionLeasedJobInput {
@@ -401,6 +397,8 @@ export interface TransitionLeasedJobInput {
   providerAttemptCount?: number;
   providerMessageId?: string;
   providerRequestId?: string;
+  /** Clear a provider reservation only when D reports a known no-send/safe-to-retry outcome. */
+  clearProviderSubmissionMarker?: boolean;
 }
 
 export interface AcquisitionRuntimeStore {
@@ -418,7 +416,13 @@ export interface AcquisitionRuntimeStore {
    * unknown-outcome and return that status instead of granting another lease.
    */
   tryLeaseJob(input: LeaseJobInput): Promise<LeaseJobResult>;
-  /** Durable ambiguity barrier written before calling the external provider. */
+  /**
+   * Atomically enforce frequencyAdmission and write the ambiguity barrier.
+   * The count must include prior provider-accepted effects AND unexpired/in-flight
+   * reservations for the same tenant, subject, mode, purpose and window. If the
+   * cap is full, atomically transition the leased job to `suppressed` with reason
+   * `frequency-cap-reached`, clear its lease, and do not write the submission marker.
+   */
   markProviderSubmissionStarted(input: MarkProviderSubmissionStartedInput): Promise<AcquisitionJob>;
   transitionLeasedJob(input: TransitionLeasedJobInput): Promise<AcquisitionJob>;
   getPauseState(input: {
@@ -426,6 +430,7 @@ export interface AcquisitionRuntimeStore {
     automationId: AcquisitionCatalogId;
     dataMode: AnalyticsDataMode;
   }): Promise<AcquisitionPauseState>;
+  /** Observability/diagnostics only; dispatch admission must not rely on this non-atomic read. */
   countProviderAcceptedEffects(input: {
     organizationId: string;
     subjectId: string;
@@ -498,11 +503,7 @@ export interface AcquisitionControlCommandResult {
   changedAt?: string;
 }
 
-/**
- * Async server command surface for the operations panel. Implementations must
- * authorize organization lifecycle management or platform operations server-side
- * and write audit records before reporting success.
- */
+/** Async server command surface; implementations authorize/audit before success. */
 export interface AcquisitionControlCommandPort {
   setOrganizationPaused(input: {
     organizationId: string;
