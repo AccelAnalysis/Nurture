@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const assets = ["nurture-n.svg", "nurture-n-mono.svg"];
+const assets = ["nurture-n-glass.png", "nurture-n-mono.svg"];
 
 for (const asset of assets) {
   const source = resolve(repoRoot, "brand", "logo", asset);
