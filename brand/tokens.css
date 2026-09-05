@@ -1,0 +1,148 @@
+/* Nurture brand tokens v0.1.0 — source of truth: brand/tokens.json */
+:root {
+  color-scheme: light dark;
+
+  --n-brand-navy-900: #011a87;
+  --n-brand-blue-800: #0135b6;
+  --n-brand-blue-700: #0151e0;
+  --n-brand-blue-600: #0264ec;
+  --n-brand-blue-500: #027af4;
+  --n-brand-azure-400: #0391fb;
+  --n-brand-cyan-300: #03a9fd;
+  --n-brand-cyan-200: #05c3fd;
+
+  --n-gradient-brand: linear-gradient(135deg, #011a87 0%, #0151e0 38%, #0391fb 68%, #05c3fd 100%);
+  --n-gradient-brand-soft: linear-gradient(135deg, rgb(1 81 224 / 18%) 0%, rgb(5 195 253 / 16%) 100%);
+
+  --n-bg: #f8fafc;
+  --n-surface: #ffffff;
+  --n-surface-raised: #ffffff;
+  --n-text: #0f172a;
+  --n-text-secondary: #475569;
+  --n-text-tertiary: #64748b;
+  --n-border: #e2e8f0;
+  --n-accent: #0264ec;
+  --n-accent-hover: #0151e0;
+  --n-on-accent: #ffffff;
+  --n-focus: #0391fb;
+
+  --n-success: #15803d;
+  --n-warning: #b45309;
+  --n-danger: #b91c1c;
+  --n-info: #0151e0;
+
+  --n-glass-bg: rgb(255 255 255 / 72%);
+  --n-glass-border: rgb(15 23 42 / 8%);
+  --n-glass-highlight: rgb(255 255 255 / 58%);
+  --n-glass-blur: 24px;
+  --n-glass-saturate: 140%;
+  --n-glass-shadow: 0 18px 60px rgb(1 26 135 / 12%);
+
+  --n-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", sans-serif;
+  --n-font-mono: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, monospace;
+
+  --n-radius-sm: 10px;
+  --n-radius-control: 14px;
+  --n-radius-card: 20px;
+  --n-radius-lg: 28px;
+  --n-radius-pill: 999px;
+
+  --n-space-1: 4px;
+  --n-space-2: 8px;
+  --n-space-3: 12px;
+  --n-space-4: 16px;
+  --n-space-5: 20px;
+  --n-space-6: 24px;
+  --n-space-8: 32px;
+  --n-space-10: 40px;
+  --n-space-12: 48px;
+  --n-space-16: 64px;
+
+  --n-control-target: 44px;
+  --n-control-target-min: 28px;
+  --n-focus-ring: 0 0 0 3px rgb(3 145 251 / 34%);
+
+  --n-motion-fast: 140ms;
+  --n-motion-standard: 220ms;
+  --n-motion-slow: 320ms;
+  --n-motion-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+:root[data-theme="dark"] {
+  --n-bg: #07111f;
+  --n-surface: #0f1b2d;
+  --n-surface-raised: #132238;
+  --n-text: #f8fafc;
+  --n-text-secondary: #cbd5e1;
+  --n-text-tertiary: #94a3b8;
+  --n-border: #334155;
+  --n-accent: #39a9ff;
+  --n-accent-hover: #6bc4ff;
+  --n-on-accent: #07111f;
+  --n-focus: #6bc4ff;
+  --n-glass-bg: rgb(9 18 32 / 64%);
+  --n-glass-border: rgb(255 255 255 / 14%);
+  --n-glass-highlight: rgb(255 255 255 / 13%);
+  --n-glass-shadow: 0 18px 60px rgb(0 0 0 / 32%);
+  --n-focus-ring: 0 0 0 3px rgb(107 196 255 / 38%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --n-bg: #07111f;
+    --n-surface: #0f1b2d;
+    --n-surface-raised: #132238;
+    --n-text: #f8fafc;
+    --n-text-secondary: #cbd5e1;
+    --n-text-tertiary: #94a3b8;
+    --n-border: #334155;
+    --n-accent: #39a9ff;
+    --n-accent-hover: #6bc4ff;
+    --n-on-accent: #07111f;
+    --n-focus: #6bc4ff;
+    --n-glass-bg: rgb(9 18 32 / 64%);
+    --n-glass-border: rgb(255 255 255 / 14%);
+    --n-glass-highlight: rgb(255 255 255 / 13%);
+    --n-glass-shadow: 0 18px 60px rgb(0 0 0 / 32%);
+    --n-focus-ring: 0 0 0 3px rgb(107 196 255 / 38%);
+  }
+}
+
+.n-glass {
+  background: var(--n-glass-bg);
+  border: 1px solid var(--n-glass-border);
+  box-shadow: inset 0 1px 0 var(--n-glass-highlight), var(--n-glass-shadow);
+  backdrop-filter: blur(var(--n-glass-blur)) saturate(var(--n-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--n-glass-blur)) saturate(var(--n-glass-saturate));
+}
+
+.n-focusable:focus-visible {
+  outline: none;
+  box-shadow: var(--n-focus-ring);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --n-glass-bg: var(--n-surface);
+    --n-glass-border: var(--n-border);
+    --n-glass-blur: 0px;
+    --n-glass-saturate: 100%;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --n-text-secondary: var(--n-text);
+    --n-glass-bg: var(--n-surface);
+    --n-glass-border: var(--n-text-tertiary);
+  }
+}

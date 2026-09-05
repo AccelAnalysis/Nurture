@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Nurture Brand Preview</title>
+  <link rel="stylesheet" href="./tokens.css" />
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: var(--n-font);
+      color: var(--n-text);
+      background:
+        radial-gradient(circle at 12% 0%, rgb(5 195 253 / 22%), transparent 28rem),
+        radial-gradient(circle at 95% 10%, rgb(1 81 224 / 20%), transparent 32rem),
+        var(--n-bg);
+    }
+    main { width: min(1120px, calc(100% - 32px)); margin: 0 auto; padding: 56px 0 96px; }
+    header { display: flex; align-items: center; gap: 24px; margin-bottom: 40px; }
+    .logo { width: 96px; height: 96px; }
+    h1 { font-size: clamp(34px, 6vw, 56px); line-height: 1; letter-spacing: -0.035em; margin: 0 0 10px; }
+    p { color: var(--n-text-secondary); line-height: 1.5; }
+    .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 16px; }
+    .card { grid-column: span 6; border-radius: var(--n-radius-card); padding: 24px; }
+    .wide { grid-column: 1 / -1; }
+    .swatches { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+    .swatch { min-height: 112px; border-radius: 16px; padding: 14px; display: flex; align-items: end; font-size: 12px; font-weight: 650; }
+    .swatch.dark { color: white; }
+    .actions { display: flex; flex-wrap: wrap; gap: 12px; }
+    button { min-height: var(--n-control-target); border-radius: var(--n-radius-control); padding: 0 18px; font: 600 16px/1 var(--n-font); }
+    .primary { border: 0; color: var(--n-on-accent); background: var(--n-accent); }
+    .secondary { color: var(--n-text); background: var(--n-glass-bg); border: 1px solid var(--n-glass-border); }
+    .type-demo strong { display: block; margin-top: 12px; }
+    code { font-family: var(--n-font-mono); font-size: 12px; }
+    @media (max-width: 760px) {
+      .card { grid-column: 1 / -1; }
+      .swatches { grid-template-columns: repeat(2, 1fr); }
+      header { align-items: flex-start; }
+      .logo { width: 72px; height: 72px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <img class="logo" src="./logo/nurture-n.svg" alt="Nurture N logo" />
+      <div>
+        <h1>Nurture</h1>
+        <p>Brand system preview · content-first · glass used with restraint</p>
+      </div>
+    </header>
+
+    <div class="grid">
+      <section class="card n-glass wide">
+        <h2>Brand color</h2>
+        <div class="swatches">
+          <div class="swatch dark" style="background:#011A87">Navy 900<br><code>#011A87</code></div>
+          <div class="swatch dark" style="background:#0151E0">Blue 700<br><code>#0151E0</code></div>
+          <div class="swatch dark" style="background:#0264EC">Blue 600<br><code>#0264EC</code></div>
+          <div class="swatch" style="background:#05C3FD">Cyan 200<br><code>#05C3FD</code></div>
+        </div>
+      </section>
+
+      <section class="card n-glass">
+        <h2>Controls</h2>
+        <p>Primary emphasis is singular. Secondary actions remain visually quieter.</p>
+        <div class="actions">
+          <button class="primary n-focusable">Continue</button>
+          <button class="secondary n-focusable">Review details</button>
+        </div>
+      </section>
+
+      <section class="card n-glass type-demo">
+        <h2>Typography</h2>
+        <strong style="font-size:34px;line-height:41px">Build what matters.</strong>
+        <p style="font-size:17px;line-height:24px">Use the system font, direct language, and enough breathing room to keep the next action obvious.</p>
+      </section>
+    </div>
+  </main>
+</body>
+</html>
