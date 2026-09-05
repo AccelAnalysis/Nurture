@@ -1,5 +1,6 @@
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { stripeSecretKey } from "./config.js";
+import { resolveCustomerId } from "./customer-binding.js";
 import {
   parseAttemptId,
   parseRequiredId,
@@ -10,7 +11,6 @@ import {
   getCurrentSubscriptionForCustomer,
   getOfferRecord,
   recordCheckoutSession,
-  resolveCustomerId,
   writeLifecycleEvent,
 } from "./store.js";
 import {
