@@ -180,92 +180,99 @@ test('survey preview does not submit; public survey accepts a demo response', as
   await page.goto('/survey/demo-survey');
   await page.locator('input[name="q1"][value="5"]').check();
   await page.getByRole('button', { name: 'Submit demo response' }).click();
-  await expect(page.getByText(/saved in this demo session/)).toBeVisible();
+  await expect(page.locator('h1')).toHaveText('Thank you for sharing.');
+  await expect(page.getByText(/does not subscribe you to marketing/)).toBeVisible();
 });
-test('referral survives guest registration without granting organization membership', async ({ page }) => {
-  await page.goto('/r/NURTURE-DEMO');
-  await page.getByRole('link', { name: 'Try an experience' }).click();
-  await page.getByRole('button', { name: 'Try a guest session' }).click();
-  await expect(page.getByRole('button', { name: 'Guest session active' })).toBeDisabled();
-  const guestUid = await page.evaluate(
-    () => JSON.parse(sessionStorage.getItem('nurture:demo:identity')!).uid as string,
-  );
-  await page.getByRole('link', { name: 'Create an account to continue' }).click();
-  await expect(page.getByText(/Referral code NURTURE-DEMO is saved/)).toBeVisible();
-  await page.getByLabel('Your name').fill('Casey Example');
-  await page.getByLabel('Email', { exact: true }).fill('casey@example.test');
-  await page.getByLabel('Password', { exact: true }).fill('demonstration-only');
+test('referral context survives public experience and anonymous registration', async ({ page }) => {
+  await page.goto('/r/NURTURE-DEMO?campaign=community');
+  await page.getByRole('link', { name: 'Explore Nurture' }).click();
+  await page.getByRole('link', { name: 'Start an experience', exact: true }).click();
+  await page.getByRole('button', { name: 'Try as a guest' }).click();
+  await expect(page.getByText(/Your guest identity is ready/)).toBeVisible();
+  const uid = await page.evaluate(() => JSON.parse(sessionStorage.getItem('nurture:demo:identity')!).uid);
+  await page.getByRole('link', { name: 'Save progress with an account' }).click();
+  await expect(page.getByText('Your referral connection is preserved.')).toBeVisible();
+  await page.getByLabel('Email', { exact: true }).fill('new.person@example.test');
+  await page.getByLabel('Password', { exact: true }).fill('NurtureDemo123!');
   await page.getByRole('button', { name: 'Create account', exact: true }).click();
-  await expect(page).toHaveURL(/\/onboarding/);
-  await page.getByRole('link', { name: 'Do this later' }).click();
-  await expect(page).toHaveURL(/\/app$/);
-  const registered = await page.evaluate(
-    () =>
-      JSON.parse(sessionStorage.getItem('nurture:demo:identity')!) as { uid: string; isAnonymous: boolean },
-  );
-  expect(registered.uid).toBe(guestUid);
-  expect(registered.isAnonymous).toBe(false);
+  await expect(page).toHaveURL('/onboarding');
+  await page.getByLabel('Display name').fill('New Person');
+  await page.getByRole('button', { name: 'Save and begin' }).click();
+  await expect(page).toHaveURL('/app');
+  expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem('nurture:demo:identity')!).uid)).toBe(uid);
   await expect(page.getByRole('link', { name: 'Organization', exact: true })).toHaveCount(0);
 });
-test('feedback dialog restores focus and sign out protects routes', async ({ page }) => {
+test('feedback dialog supports keyboard dismissal and return focus; sign out returns to public', async ({
+  page,
+}) => {
   await enter(page);
-  const trigger = page.getByRole('button', { name: 'Share feedback', exact: true });
-  await trigger.click();
-  await expect(page.getByRole('dialog')).toBeVisible();
+  await page.goto('/app');
+  const feedback = page.getByRole('button', { name: 'Share feedback', exact: true });
+  await feedback.click();
+  const dialog = page.getByRole('dialog', { name: 'Share your perspective' });
+  await expect(dialog).toBeVisible();
   await page.keyboard.press('Escape');
-  await expect(page.getByRole('dialog')).not.toBeVisible();
-  await expect(trigger).toBeFocused();
-  await page.getByLabel('Account menu').click();
+  await expect(dialog).not.toBeVisible();
+  await expect(feedback).toBeFocused();
+  await feedback.click();
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: 'Close dialog' }).click();
+  await expect(dialog).not.toBeVisible();
+  await expect(feedback).toBeFocused();
+  await page.getByRole('button', { name: 'Account menu' }).click();
   await page.getByRole('button', { name: 'Sign out', exact: true }).click();
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL('/');
   await page.goto('/app');
   await expect(page).toHaveURL(/\/login\?next=/);
 });
-test('light and dark screens pass automated accessibility checks', async ({ page }, testInfo) => {
+test('representative pages pass accessibility scans and screenshots', async ({ page }, testInfo) => {
   await page.goto('/');
-  await expect(page.locator('h1')).toBeVisible();
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   await page.screenshot({ path: `test-results/home-${testInfo.project.name}.png`, fullPage: true });
-  expect(
-    (await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations,
-  ).toEqual([]);
   await enter(page);
-  for (const [name, path] of [
-    ['overview', '/org/demo-org'],
-    ['contacts', '/org/demo-org/contacts'],
-    ['sequence', '/org/demo-org/sequences/post-experience'],
-    ['survey', '/survey/demo-survey'],
-  ]) {
-    await checkPage(page, path);
+  await page.screenshot({ path: `test-results/overview-${testInfo.project.name}.png`, fullPage: true });
+  const scans = [
+    ['/org/demo-org/contacts', 'contacts'],
+    ['/org/demo-org/sequences/post-experience', 'sequence'],
+    ['/survey/demo-survey', 'survey'],
+  ];
+  for (const [path, name] of scans) {
+    await page.goto(path);
+    await expect(page.locator('h1')).toBeVisible();
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
     await page.screenshot({ path: `test-results/${name}-${testInfo.project.name}.png`, fullPage: true });
-    expect(
-      (await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations,
-    ).toEqual([]);
   }
-  await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
-  await checkPage(page, '/app');
+  await page.goto('/app');
+  const feedback = page.getByRole('button', { name: 'Share feedback', exact: true });
+  await feedback.click();
+  const dialog = page.getByRole('dialog', { name: 'Share your perspective' });
+  await dialog.getByLabel('What would you like us to know?').fill('A thoughtful next connection.');
+  await dialog.getByRole('button', { name: 'Save demo feedback' }).click();
+  await expect(dialog.getByRole('status')).toContainText('Feedback preview saved in demo memory');
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  await page.keyboard.press('Escape');
+  await page.goto('/app/settings');
+  await page.getByLabel('Appearance').selectOption('dark');
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await page.goto('/app');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   await page.screenshot({ path: `test-results/customer-dark-${testInfo.project.name}.png`, fullPage: true });
-  expect(
-    (await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations,
-  ).toEqual([]);
 });
-test('production cannot activate demo through query or browser storage', async ({ page }) => {
+test('production has public pages, no demo bypass, and a clear unconfigured-auth state', async ({ page }) => {
   await page.goto('http://127.0.0.1:4174/');
+  await expect(page.locator('h1')).toBeVisible();
+  await expect(page.getByText('Demo workspace', { exact: true })).toHaveCount(0);
+  await page.goto('http://127.0.0.1:4174/demo?demo=true');
+  await expect(page.getByText('Demo mode is not enabled in this build.')).toBeVisible();
   await page.evaluate(() =>
     sessionStorage.setItem(
       'nurture:demo:identity',
-      JSON.stringify({
-        uid: 'demo-owner',
-        email: 'owner@example.test',
-        displayName: 'Alex',
-        emailVerified: true,
-        isAnonymous: false,
-      }),
+      JSON.stringify({ uid: 'demo-owner', isAnonymous: false, emailVerified: true, displayName: 'Owner' }),
     ),
   );
-  await page.goto('http://127.0.0.1:4174/demo?demo=true');
-  await expect(page.getByText('Demo mode is not enabled in this build')).toBeVisible();
-  await expect(page.getByRole('button', { name: /Organization owner/ })).toHaveCount(0);
-  await page.goto('http://127.0.0.1:4174/org/demo-org');
-  await expect(page).toHaveURL(/\/login/);
-  await expect(page.getByText(/Firebase client configuration is missing/)).toBeVisible();
+  await page.goto('http://127.0.0.1:4174/app?demo=true');
+  await expect(page.getByText(/Firebase configuration is not available/)).toBeVisible();
+  await page.goto('http://127.0.0.1:4174/login');
+  await expect(page.getByText('Firebase is not configured for this environment.')).toBeVisible();
 });

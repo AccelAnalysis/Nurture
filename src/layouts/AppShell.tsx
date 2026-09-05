@@ -113,7 +113,11 @@ export default function AppShell({ organization = false }: { organization?: bool
         </div>
         <div className="header-actions">
           {org.permits('workspace:view') && (
-            <Link className="workspace-switch" to={organization ? '/app' : `/org/${org.organization?.id}`}>
+            <Link
+              className="workspace-switch"
+              to={organization ? '/app' : `/org/${org.organization?.id}`}
+              aria-label={organization ? 'My app' : 'Organization'}
+            >
               <Icon name={organization ? 'user' : 'building'} />
               <span>{organization ? 'My app' : 'Organization'}</span>
             </Link>

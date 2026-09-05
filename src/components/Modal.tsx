@@ -10,18 +10,27 @@ export function Modal({
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   useEffect(() => {
+    // Closed dialogs must not capture or restore focus when another dialog opens.
+    if (!open) return;
     const dialog = ref.current;
     if (!dialog) return;
     const previous = document.activeElement;
-    if (open && !dialog.open) dialog.showModal();
-    if (!open && dialog.open) dialog.close();
+    if (!dialog.open) dialog.showModal();
     return () => {
       if (dialog.open) dialog.close();
-      if (previous instanceof HTMLElement) previous.focus();
+      if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
     };
   }, [open]);
   return (
-    <dialog ref={ref} aria-labelledby={titleId} onCancel={onClose} onClose={onClose}>
+    <dialog
+      ref={ref}
+      aria-labelledby={titleId}
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
+      onClose={onClose}
+    >
       <div className="modal-heading">
         <h2 id={titleId}>{title}</h2>
         <Button variant="quiet" aria-label="Close dialog" onClick={onClose}>
