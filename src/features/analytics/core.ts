@@ -2,6 +2,7 @@ import {
   ANALYTICS_SCHEMA_VERSION,
   EVENT_CATALOG,
   MAX_EVENT_PAYLOAD_BYTES,
+  type AnalyticsDataMode,
   type AnalyticsEventType,
   type CreateSubmissionOptions,
   type EventPayload,
@@ -10,6 +11,7 @@ import {
   type LifecycleEventEnvelope,
   type LifecycleEventSource,
   type LifecycleEventSubmission,
+  type LifecycleSubjectKind,
   type NurtureEventType,
   type TrustedEventBinding,
 } from "./contracts.js";
@@ -17,6 +19,26 @@ import {
 const SECRET_KEY_PATTERN = /(^|_)(password|passcode|secret|token|authorization|cookie|card_?number|cvc|cvv|ssn|social_?security)($|_)/i;
 const MODULE_EVENT_PATTERN = /^experience\.[a-z0-9][a-z0-9-]*(?:\.[a-z0-9][a-z0-9_-]*)+$/;
 const MODULE_EVENT_SOURCES: readonly LifecycleEventSource[] = ["browser", "domain_action", "trusted_server"];
+const EVENT_SOURCES = new Set<LifecycleEventSource>([
+  "browser",
+  "domain_action",
+  "provider_webhook",
+  "trusted_server",
+  "scheduler",
+  "administrator",
+]);
+const DATA_MODES = new Set<AnalyticsDataMode>(["live", "test", "preview", "demo", "development"]);
+const SUBJECT_KINDS = new Set<LifecycleSubjectKind>([
+  "visitor",
+  "lead",
+  "identity",
+  "customer",
+  "organization",
+  "offer",
+  "subscription",
+  "experience",
+  "configuration",
+]);
 
 export class AnalyticsContractError extends Error {
   constructor(message: string) {
@@ -31,8 +53,25 @@ function requireNonEmpty(label: string, value: string | undefined): string {
   return normalized;
 }
 
+function requireString(label: string, value: unknown): string {
+  if (typeof value !== "string") throw new AnalyticsContractError(`${label} must be a string.`);
+  return requireNonEmpty(label, value);
+}
+
+function optionalString(label: string, value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  return requireString(label, value);
+}
+
 function assertIsoTimestamp(label: string, value: string): void {
   if (Number.isNaN(Date.parse(value))) throw new AnalyticsContractError(`${label} must be an ISO-compatible timestamp.`);
+}
+
+function assertRecord(value: unknown, label: string): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new AnalyticsContractError(`${label} must be an object.`);
+  }
+  return value as Record<string, unknown>;
 }
 
 function assertJsonValue(value: unknown, path: string): asserts value is JsonValue {
@@ -76,6 +115,18 @@ export function isExperienceModuleEventType(value: unknown): value is Experience
 
 export function isAnalyticsEventType(value: unknown): value is AnalyticsEventType {
   return isNurtureEventType(value) || isExperienceModuleEventType(value);
+}
+
+export function isLifecycleEventSource(value: unknown): value is LifecycleEventSource {
+  return typeof value === "string" && EVENT_SOURCES.has(value as LifecycleEventSource);
+}
+
+export function isAnalyticsDataMode(value: unknown): value is AnalyticsDataMode {
+  return typeof value === "string" && DATA_MODES.has(value as AnalyticsDataMode);
+}
+
+export function isLifecycleSubjectKind(value: unknown): value is LifecycleSubjectKind {
+  return typeof value === "string" && SUBJECT_KINDS.has(value as LifecycleSubjectKind);
 }
 
 export function isSourceAllowedForEvent(eventType: AnalyticsEventType, source: LifecycleEventSource): boolean {
@@ -171,5 +222,79 @@ export function bindLifecycleEvent(
     idempotencyKey: requireNonEmpty("idempotencyKey", submission.idempotencyKey),
     dataMode: binding.dataMode ?? submission.dataMode,
     payload: submission.payload,
+  };
+}
+
+/**
+ * Validates a materialized trusted envelope before durable persistence or before
+ * handing it to Track E's EventIntegrationPort. This is also the convergence
+ * check for server-side producers such as Track D billing reconciliation.
+ */
+export function validateLifecycleEventEnvelope(value: unknown): LifecycleEventEnvelope {
+  const input = assertRecord(value, "event");
+  const eventId = requireString("eventId", input.eventId);
+  if (!isAnalyticsEventType(input.eventType)) {
+    throw new AnalyticsContractError(`Unknown or invalid event type: ${String(input.eventType)}.`);
+  }
+  const eventType = input.eventType;
+  if (input.schemaVersion !== ANALYTICS_SCHEMA_VERSION) {
+    throw new AnalyticsContractError(`Unsupported schema version: ${String(input.schemaVersion)}.`);
+  }
+
+  const organizationId = requireString("organizationId", input.organizationId);
+  const occurredAt = requireString("occurredAt", input.occurredAt);
+  const receivedAt = requireString("receivedAt", input.receivedAt);
+  assertIsoTimestamp("occurredAt", occurredAt);
+  assertIsoTimestamp("receivedAt", receivedAt);
+
+  if (!isLifecycleEventSource(input.source)) {
+    throw new AnalyticsContractError(`Unknown lifecycle event source: ${String(input.source)}.`);
+  }
+  const source = input.source;
+  if (!isSourceAllowedForEvent(eventType, source)) {
+    throw new AnalyticsContractError(`${source} is not an allowed source for ${eventType}.`);
+  }
+
+  if (!isAnalyticsDataMode(input.dataMode)) {
+    throw new AnalyticsContractError(`Unknown analytics data mode: ${String(input.dataMode)}.`);
+  }
+  const dataMode = input.dataMode;
+
+  const subjectId = optionalString("subjectId", input.subjectId);
+  let subjectKind: LifecycleSubjectKind | undefined;
+  if (input.subjectKind !== undefined) {
+    if (!isLifecycleSubjectKind(input.subjectKind)) {
+      throw new AnalyticsContractError(`Unknown lifecycle subject kind: ${String(input.subjectKind)}.`);
+    }
+    subjectKind = input.subjectKind;
+  }
+  if (Boolean(subjectId) !== Boolean(subjectKind)) {
+    throw new AnalyticsContractError("subjectId and subjectKind must be supplied together.");
+  }
+
+  const payloadInput = assertRecord(input.payload, "payload") as EventPayload;
+  const payload = validateEventPayload(payloadInput);
+
+  return {
+    eventId,
+    eventType,
+    schemaVersion: ANALYTICS_SCHEMA_VERSION,
+    organizationId,
+    subjectId,
+    subjectKind,
+    identityId: optionalString("identityId", input.identityId),
+    customerId: optionalString("customerId", input.customerId),
+    experienceId: optionalString("experienceId", input.experienceId),
+    experienceModuleId: optionalString("experienceModuleId", input.experienceModuleId),
+    experienceModuleVersion: optionalString("experienceModuleVersion", input.experienceModuleVersion),
+    offerId: optionalString("offerId", input.offerId),
+    sessionId: optionalString("sessionId", input.sessionId),
+    occurredAt,
+    receivedAt,
+    source,
+    correlationId: requireString("correlationId", input.correlationId),
+    idempotencyKey: requireString("idempotencyKey", input.idempotencyKey),
+    dataMode,
+    payload,
   };
 }
