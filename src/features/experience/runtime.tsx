@@ -11,8 +11,15 @@ import type {
   ExperienceLifecycleEvent,
   ExperienceOnboardingBridge,
   ExperienceOnboardingResult,
+  ExperienceOrganizationSource,
   ExperienceRecoverableErrorReporter,
 } from "./contracts";
+
+const defaultOrganizationSource: ExperienceOrganizationSource = {
+  resolveOrganizationId(request) {
+    return request.authenticatedOrganizationId ?? null;
+  },
+};
 
 const unavailableCustomerSource: ExperienceCustomerSource = {
   async resolveCustomer(_request: ExperienceCustomerRequest): Promise<ExperienceCustomerResult> {
@@ -56,9 +63,11 @@ const browserRecoverableErrorReporter: ExperienceRecoverableErrorReporter = {
 };
 
 export interface ExperienceRuntimeValue {
-  /** Optional Track A source. When absent, the trusted registry default is used. */
+  /** Track A scope source. Integration should pass ConfigurationProvider.publicOrganizationId for public/trial mode. */
+  organizationSource: ExperienceOrganizationSource;
+  /** Optional Track A published Experience source. When absent, the trusted registry default is used. */
   definitionSource?: ExperienceDefinitionSource;
-  /** Track C source. Default does not infer Customer from Firebase identity. */
+  /** Track C source. Release 1 resolves the stable Customer independently of organization scope. */
   customerSource: ExperienceCustomerSource;
   /** Tracks D/E source. Default denies protected access. */
   entitlementSource: ExperienceEntitlementSource;
@@ -71,6 +80,7 @@ export interface ExperienceRuntimeValue {
 }
 
 const defaultRuntime: ExperienceRuntimeValue = {
+  organizationSource: defaultOrganizationSource,
   definitionSource: undefined,
   customerSource: unavailableCustomerSource,
   entitlementSource: unavailableEntitlementSource,
@@ -88,6 +98,7 @@ const ExperienceRuntimeContext = createContext<ExperienceRuntimeValue>(defaultRu
  */
 export function ExperienceRuntimeProvider({
   children,
+  organizationSource = defaultOrganizationSource,
   definitionSource,
   customerSource = unavailableCustomerSource,
   entitlementSource = unavailableEntitlementSource,
@@ -96,6 +107,7 @@ export function ExperienceRuntimeProvider({
   recoverableErrorReporter = browserRecoverableErrorReporter,
 }: {
   children: ReactNode;
+  organizationSource?: ExperienceOrganizationSource;
   definitionSource?: ExperienceDefinitionSource;
   customerSource?: ExperienceCustomerSource;
   entitlementSource?: ExperienceEntitlementSource;
@@ -104,13 +116,14 @@ export function ExperienceRuntimeProvider({
   recoverableErrorReporter?: ExperienceRecoverableErrorReporter;
 }) {
   const value = useMemo<ExperienceRuntimeValue>(() => ({
+    organizationSource,
     definitionSource,
     customerSource,
     entitlementSource,
     eventSink,
     onboardingBridge,
     recoverableErrorReporter,
-  }), [definitionSource, customerSource, entitlementSource, eventSink, onboardingBridge, recoverableErrorReporter]);
+  }), [organizationSource, definitionSource, customerSource, entitlementSource, eventSink, onboardingBridge, recoverableErrorReporter]);
   return <ExperienceRuntimeContext.Provider value={value}>{children}</ExperienceRuntimeContext.Provider>;
 }
 
