@@ -1,4 +1,4 @@
-import type { OnboardingFlowDefinitionV2 } from "./contracts";
+import type { OnboardingFlowDefinitionV2 } from "./contracts.js";
 
 /** Nurture-owned fallback. Organization overrides stay in Track A's opaque configuration extension. */
 export const defaultOnboardingFlowV2: OnboardingFlowDefinitionV2 = {
