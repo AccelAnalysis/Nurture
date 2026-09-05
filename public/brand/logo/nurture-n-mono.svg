@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Nurture N monochrome</title>
+  <desc id="desc">Monochrome Nurture ribbon N.</desc>
+  <path d="M112 410V102" fill="none" stroke="#0F172A" stroke-width="88" stroke-linecap="round"/>
+  <path d="M400 410V102" fill="none" stroke="#0F172A" stroke-width="88" stroke-linecap="round"/>
+  <path d="M112 102L400 410" fill="none" stroke="#0F172A" stroke-width="94" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

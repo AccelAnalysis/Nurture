@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Nurture N</title>
+  <desc id="desc">A folded ribbon N in Accel Analysis blue-to-cyan gradients.</desc>
+  <defs>
+    <linearGradient id="left" gradientUnits="userSpaceOnUse" x1="112" y1="410" x2="170" y2="102">
+      <stop offset="0" stop-color="#011A87"/>
+      <stop offset="0.55" stop-color="#0151E0"/>
+      <stop offset="1" stop-color="#0391FB"/>
+    </linearGradient>
+    <linearGradient id="diagonal" gradientUnits="userSpaceOnUse" x1="112" y1="102" x2="400" y2="410">
+      <stop offset="0" stop-color="#0264EC"/>
+      <stop offset="0.48" stop-color="#0391FB"/>
+      <stop offset="1" stop-color="#05C3FD"/>
+    </linearGradient>
+    <linearGradient id="right" gradientUnits="userSpaceOnUse" x1="400" y1="410" x2="400" y2="102">
+      <stop offset="0" stop-color="#0151E0"/>
+      <stop offset="0.58" stop-color="#0391FB"/>
+      <stop offset="1" stop-color="#05C3FD"/>
+    </linearGradient>
+    <linearGradient id="shine" gradientUnits="userSpaceOnUse" x1="126" y1="102" x2="386" y2="380">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.42"/>
+      <stop offset="0.65" stop-color="#FFFFFF" stop-opacity="0.10"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <path d="M112 410V102" fill="none" stroke="url(#left)" stroke-width="88" stroke-linecap="round"/>
+  <path d="M400 410V102" fill="none" stroke="url(#right)" stroke-width="88" stroke-linecap="round"/>
+  <path d="M112 102L400 410" fill="none" stroke="url(#diagonal)" stroke-width="94" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M126 102L386 380" fill="none" stroke="url(#shine)" stroke-width="18" stroke-linecap="round" opacity="0.75"/>
+</svg>
