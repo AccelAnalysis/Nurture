@@ -8,6 +8,7 @@ import { CommunicationsAdminPage } from "../../features/communications";
 import { BrandSiteAdminPage } from "../../features/configuration/BrandSiteAdminPage";
 import { ConfiguredPublicHome } from "../../features/configuration/ConfiguredPublicHome";
 import { PublicOrganizationScope } from "../../features/configuration/ConfigurationProvider";
+import { CustomerLifecyclePreferencesPage } from "../../features/customer-preferences/CustomerLifecyclePreferencesPage";
 import { CustomerWorkspaceDetailPage, CustomerWorkspaceListPage } from "../../features/customer-workspace";
 import { ExperienceHost } from "../../features/experience/ExperienceHost";
 import { ExperienceRetentionHost } from "../../features/experience/ExperienceRetentionHost";
@@ -136,6 +137,7 @@ export function AppRouter() {
         ? <ExperienceRetentionHost slot="secondary" accessMode="authenticated" relativePath={route.segments.slice(2).join("/")} />
         : route.path === "/app/offers" ? <ParticipantOffersPage />
         : route.path === "/app/billing" ? <ParticipantBillingPage />
+        : route.path === "/app/settings" ? <CustomerLifecyclePreferencesPage />
         : participantRoutes.has(route.path)
           ? <CustomerPage path={route.path} />
           : <ParticipantStateView state="unavailable" title="Participant destination unavailable" description="This /app route is not registered with the participant application skeleton." />;
