@@ -1,4 +1,4 @@
-/* Nurture brand tokens v0.1.0 — source of truth: brand/tokens.json */
+/* Nurture brand tokens v0.1.1 — source of truth: brand/tokens.json */
 :root {
   color-scheme: light dark;
 
@@ -37,6 +37,12 @@
   --n-glass-blur: 24px;
   --n-glass-saturate: 140%;
   --n-glass-shadow: 0 18px 60px rgb(1 26 135 / 12%);
+
+  /* Compatibility aliases used by the application skeleton. Keep these semantic,
+     so older and newer component layers resolve to the same canonical brand tokens. */
+  --n-background: var(--n-bg);
+  --n-text-primary: var(--n-text);
+  --n-shadow: var(--n-glass-shadow);
 
   --n-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", sans-serif;
   --n-font-mono: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, monospace;
