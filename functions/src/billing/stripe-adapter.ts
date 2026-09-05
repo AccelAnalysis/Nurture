@@ -10,6 +10,7 @@ import {
   saveBillingCustomerMapping,
 } from "./store.js";
 import {
+  permanentBillingEvent,
   stripeInterval,
   stripeStatus,
   unixSecondsToIso,
@@ -90,6 +91,7 @@ export async function createStripeCheckout(input: {
     nurtureOrganizationId: input.organizationId,
     nurtureCustomerId: input.customerId,
     nurtureOfferId: input.offer.id,
+    nurtureOfferVersion: String(input.offer.version),
     nurtureOfferPriceId: input.localPrice.id,
   };
   const useTrial = billingTrialsEnabled.value() && Boolean(input.offer.trialDays && input.offer.trialDays > 0);
@@ -131,23 +133,29 @@ export function subscriptionSnapshotFromStripe(input: {
   providerEventId: string;
 }): SubscriptionSnapshot {
   const { subscription, offer } = input;
-  if (subscription.livemode) throw new Error("Release 1 rejects live-mode subscription events.");
-  if (subscription.items.data.length !== 1) throw new Error("Release 1 expects exactly one subscription item per Nurture Offer.");
+  if (subscription.livemode) return permanentBillingEvent("Release 1 rejects live-mode subscription events.");
+  if (subscription.items.data.length !== 1) return permanentBillingEvent("Release 1 expects exactly one subscription item per Nurture Offer.");
   const item = subscription.items.data[0];
   const providerPrice = item.price;
-  if (!providerPrice.recurring) throw new Error("Subscription item is not recurring.");
-  if (providerPrice.unit_amount === null) throw new Error("Subscription item does not have a fixed unit amount.");
+  if (!providerPrice.recurring) return permanentBillingEvent("Subscription item is not recurring.");
+  if (providerPrice.unit_amount === null) return permanentBillingEvent("Subscription item does not have a fixed unit amount.");
 
-  const localPrice = offer.prices.find((price) => price.providerPriceId === providerPrice.id && price.active);
-  if (!localPrice) throw new Error("Stripe subscription Price is not mapped to the published Nurture Offer.");
-  if (localPrice.unitAmountMinor !== providerPrice.unit_amount || localPrice.currency !== providerPrice.currency.toLowerCase()) {
-    throw new Error("Stripe subscription commercial terms do not match the published Nurture Offer.");
+  const localPrice = offer.prices.find((price) => price.providerPriceId === providerPrice.id);
+  if (!localPrice) return permanentBillingEvent("Stripe subscription Price is not mapped to the resolved immutable Nurture Offer version.");
+  if (localPrice.unitAmountMinor !== providerPrice.unit_amount || localPrice.currency.toLowerCase() !== providerPrice.currency.toLowerCase()) {
+    return permanentBillingEvent("Stripe subscription commercial terms do not match the resolved immutable Nurture Offer version.");
   }
-  if (localPrice.interval !== providerPrice.recurring.interval) throw new Error("Stripe subscription interval does not match the published Nurture Offer.");
+  if (localPrice.interval !== providerPrice.recurring.interval) return permanentBillingEvent("Stripe subscription interval does not match the resolved immutable Nurture Offer version.");
 
   const metadata = subscription.metadata;
-  if (metadata.nurtureOrganizationId !== input.organizationId || metadata.nurtureCustomerId !== input.customerId || metadata.nurtureOfferId !== offer.id || metadata.nurtureOfferPriceId !== localPrice.id) {
-    throw new Error("Stripe subscription metadata does not match the resolved Nurture scope.");
+  if (metadata.nurtureOrganizationId !== input.organizationId || metadata.nurtureCustomerId !== input.customerId || metadata.nurtureOfferId !== offer.id) {
+    return permanentBillingEvent("Stripe subscription metadata does not match the resolved Nurture scope.");
+  }
+  if (metadata.nurtureOfferVersion && Number(metadata.nurtureOfferVersion) !== offer.version) {
+    return permanentBillingEvent("Stripe subscription Offer version metadata does not match the resolved immutable Nurture Offer version.");
+  }
+  if (metadata.nurtureOfferPriceId && metadata.nurtureOfferPriceId !== localPrice.id) {
+    return permanentBillingEvent("Stripe subscription local Price metadata does not match the resolved immutable Nurture Offer version.");
   }
 
   return {
@@ -155,6 +163,8 @@ export function subscriptionSnapshotFromStripe(input: {
     organizationId: input.organizationId,
     customerId: input.customerId,
     offerId: offer.id,
+    offerVersion: offer.version,
+    offerPriceId: localPrice.id,
     provider: "stripe",
     providerCustomerId: customerIdFromSubscription(subscription),
     providerSubscriptionId: subscription.id,
