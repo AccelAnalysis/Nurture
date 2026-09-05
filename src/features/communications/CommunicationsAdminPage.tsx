@@ -82,7 +82,7 @@ export function CommunicationsAdminPage({ organizationId }: { organizationId: st
     try {
       const updated = await publishCommunicationTemplateVersion(organizationId, selected.templateId);
       setTemplates((items) => replaceTemplate(items, updated));
-      setNotice(`Published ${updated.content?.name ?? updated.draft.content.name} version ${updated.published?.version ?? "—"}. Existing runs remain pinned to their recorded version.`);
+      setNotice(`Published ${updated.draft.content.name} version ${updated.published?.version ?? "—"}. Existing runs remain pinned to their recorded version.`);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Template could not be published.");
     } finally { setBusy(null); }
