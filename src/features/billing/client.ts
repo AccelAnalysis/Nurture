@@ -42,12 +42,17 @@ export async function getCurrentSubscription(organizationId: string) {
   return result.data.subscription;
 }
 
-export async function createCheckoutSession(request: CheckoutSessionRequest) {
+type CheckoutInput = Omit<CheckoutSessionRequest, "attemptId"> & { attemptId?: string };
+
+export async function createCheckoutSession(request: CheckoutInput) {
   const callable = httpsCallable<CheckoutSessionRequest, CheckoutSessionResult>(
     requireFunctions(),
     "createBillingCheckoutSession",
   );
-  const result = await callable(request);
+  const result = await callable({
+    ...request,
+    attemptId: request.attemptId ?? crypto.randomUUID(),
+  });
   return result.data;
 }
 
