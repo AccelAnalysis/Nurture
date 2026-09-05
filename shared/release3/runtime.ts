@@ -62,8 +62,8 @@ export function evaluatePredicate(predicate: RulePredicate, facts: SegmentFact[]
 export function evaluateConditionGroup(group: ConditionGroup | undefined, facts: SegmentFact[]): boolean {
   if (!group || group.predicates.length === 0) return true;
   return group.mode === "all"
-    ? group.predicates.every((predicate) => evaluatePredicate(predicate, facts))
-    : group.predicates.some((predicate) => evaluatePredicate(predicate, facts));
+    ? group.predicates.every((predicate) => evaluatePredicate(predicate, input.facts))
+    : group.predicates.some((predicate) => evaluatePredicate(predicate, input.facts));
 }
 
 function inHours(now: string, then: string): number { return Math.max(0, (Date.parse(now) - Date.parse(then)) / 3_600_000); }
@@ -85,7 +85,7 @@ export function evaluateTreatmentAdmission(definition: AutomationDefinitionV3, c
   if (!evaluateConditionGroup(definition.audience, context.facts)) reasons.push("unknown-required-fact");
   if (definition.stopConditions && evaluateConditionGroup(definition.stopConditions, context.facts)) reasons.push("superseded");
 
-  const isPromotion = definition.kind === "upsell" || definition.kind === "win-back" || definition.kind === "re-engagement";
+  const isPromotion = definition.kind === "upsell" || definition.kind === "win-back" || definition.kind === "re-engagement" || definition.kind === "referral";
   if (isPromotion && context.commercial.cancellation.status !== "none") reasons.push("cancellation-conflict");
   if (definition.kind === "upsell" && (context.commercial.paymentHealth === "failed" || context.commercial.paymentHealth === "recovering")) reasons.push("payment-health-conflict");
   if (definition.kind === "renewal" && context.commercial.subscriptionState !== "active" && context.commercial.subscriptionState !== "trialing") reasons.push("commercial-state-conflict");
