@@ -7,6 +7,7 @@ on:
       - main
       - release/1-integration
       - release/2-integration
+      - release/3-integration
 
 permissions:
   contents: read
@@ -37,6 +38,9 @@ jobs:
 
       - name: Platform and integration contracts
         run: npm test
+
+      - name: Release 3 integration acceptance
+        run: npm run test:release3
 
       - name: Experience contract
         run: npm run test:experience
@@ -72,6 +76,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: release-2-browser-evidence
-          path: test-results/release-2
+          name: release-3-browser-evidence
+          path: test-results
           if-no-files-found: ignore
