@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - release/1-integration
 
 permissions:
   contents: read
@@ -21,11 +22,46 @@ jobs:
         with:
           node-version: 24
 
-      - name: Install dependencies
+      - name: Install web dependencies
         run: npm install --no-audit --no-fund
 
-      - name: Typecheck
+      - name: Typecheck web
         run: npm run typecheck
 
-      - name: Build
+      - name: Platform and integration contracts
+        run: npm test
+
+      - name: Experience contract
+        run: npm run test:experience
+
+      - name: Analytics contract
+        run: npx tsc -p tsconfig.analytics.json && node scripts/verify-analytics-contract.mjs
+
+      - name: Build web
         run: npm run build
+
+      - name: Install Functions dependencies
+        working-directory: functions
+        run: npm install --no-audit --no-fund
+
+      - name: Typecheck Functions
+        working-directory: functions
+        run: npm run typecheck
+
+      - name: Test Functions
+        working-directory: functions
+        run: npm test
+
+      - name: Install browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Verify production-bundle browser behavior
+        run: npm run test:browser
+
+      - name: Preserve browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-1-browser-evidence
+          path: test-results/release-1
+          if-no-files-found: ignore
