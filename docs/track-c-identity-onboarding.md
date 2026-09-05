@@ -11,19 +11,19 @@ Track C owns the transition **Anonymous Visitor → Lead Candidate → Registere
 | Concept | Track C meaning | Authority / owner boundary |
 | --- | --- | --- |
 | Firebase `User` | Authentication identity and session. May be anonymous before registration. | Firebase Auth / Track C |
-| `CustomerProfile` | Stable Nurture customer-domain record linked to one identity. | Track C |
+| `CustomerProfile` | Stable Nurture customer-domain record linked to one identity, including a stable `customerId`. | Track C |
 | Lead candidate | Identity-scoped acquisition record with optional claimed organization/offer/referral handoff. | Track C capture; trusted tenant linking belongs to lifecycle/backend boundary |
 | `OrganizationMembership` | Staff/member authorization for an organization. | Track E; never created by customer profile bootstrap |
-| Entitlement | Commercial/Experience access. | Tracks D/B; never inferred from registration or onboarding |
+| Entitlement | Organization/customer-scoped commercial/Experience access. | Tracks D/B; never inferred from registration or onboarding |
 | Onboarding definition/progress | Versioned setup requirements and resumable customer state. | Track C framework; Track A/Track B may provide validated extensions |
 
-The implementation deliberately does **not** treat `Firebase User = Customer = Organization Member`.
+The implementation deliberately does **not** treat `Firebase User = Customer = Organization Member`. A stable Customer identifier also does not establish organization authority: organization scope remains explicit on billing, entitlement, data, and authorization records.
 
 ## 2. Identity-owned persistence contract
 
 The client uses the existing modular Firestore instance exposed by `src/firebase.ts`; Track C does not provision or change the Firestore database itself.
 
-- `identityCustomers/{identityUid}` — Nurture account/customer profile keyed to the authenticated Firebase UID, with immutable `identityId` and stable namespaced `customerId`. This is not an organization-scoped Customer record.
+- `identityCustomers/{identityUid}` — Nurture account/customer profile keyed to the authenticated Firebase UID, with immutable `identityId` and stable namespaced `customerId`.
 - `identityLeadCandidates/{identityUid}` — one Release 1 progressive lead candidate for the identity. `organizationIdCandidate` is input context, not tenant authority.
 - `identityOnboarding/{identityUid}` — current versioned onboarding progress, answers, and versioned agreement acceptances.
 
@@ -66,11 +66,13 @@ After registration, `customerProfileRepository.getOrCreate` bootstraps a separat
 
 Anonymous Firebase users do not satisfy `AuthenticatedRoute`. `/onboarding/*` requires a registered customer. `/app/*` additionally uses `OnboardingCompleteRoute`, while organization/platform administration retain their independent authorization boundaries.
 
-### Organization-scoped Customer handoff
+### Customer scope handoff to Tracks B and D
 
-The canonical Release 1 integration now has an explicit distinction between the Nurture account `CustomerProfile` and an organization-scoped Customer used by Experience entitlements and billing. Track C exposes `CustomerScopeSource`/`customerScopeSource` with the same request/result shape Track B currently expects. It resolves the global profile only when no organization scope is requested and **fails closed** when `organizationId` is present.
+`CustomerScopeSource` / `customerScopeSource` matches Track B's `ExperienceCustomerSource` request/result shape. It resolves the stable Track C `customerId` even when an `organizationId` is supplied because the completed Track D implementation also consumes that same stored identifier from `identityCustomers/{identityUid}`.
 
-That behavior is intentional: a browser-provided organization candidate cannot safely create tenant authority. Tracks C/E must converge on a trusted bootstrap/link operation that validates the published organization/application context and creates or resolves exactly one organization Customer linked to the Firebase identity. Track D PR #10 already fails closed until that record exists.
+The supplied `organizationId` remains **context, not authority**. Returning a stable `customerId` does not prove organization membership, subscription, entitlement, or data access. Track D stores billing state under explicit organization scope and Track B's entitlement resolver independently checks organization/customer/Experience scope. Track E remains responsible for trusted tenant and capability enforcement.
+
+This convergence avoids inventing a second per-organization customer identity while preserving the required distinction between authentication, customer identity, membership, and entitlement.
 
 ## 6. Verification and recovery
 
@@ -94,11 +96,20 @@ Release 1 makes verification available without inventing a universal blocking po
 
 The Release 1 default contains Profile → Preferences → Ready. `resolveOnboardingDefinition` accepts namespaced `OnboardingExtension` values from organization configuration or Experience manifests. This keeps Track A and Track B additive and prevents either from replacing the onboarding engine.
 
+Track B integration is now concrete rather than only a type seam:
+
+- `experienceRequirementsToOnboardingExtension` converts a module's declared onboarding requirements into namespaced Track C steps;
+- `createExperienceOnboardingBridge` is structurally compatible with Track B's `ExperienceOnboardingBridge`;
+- module completion is accepted only for the calling module's declared **current** step;
+- undeclared result fields are rejected and only Track C-supported field values are persisted;
+- agreement acceptance cannot be asserted by Experience module code and must remain a Nurture/human action;
+- step and overall completion emit the same Track C lifecycle signals and update the stable customer profile.
+
 Progress persists after every completed step. Reopening `/onboarding` resumes the first incomplete step. Definition reconciliation preserves matching completed steps, adds new steps, and reopens a required agreement step when its version changes. The repository also supports optional-step skipping and explicit abandoned/incomplete state.
 
 ## 8. Lifecycle instrumentation handoff to Track F
 
-Track C emits typed browser signals on `window` using the `nurture:lifecycle-signal` event name:
+Track C emits these lifecycle signals after the corresponding owned action succeeds:
 
 - `lead.created`
 - `registration.started`
@@ -108,19 +119,23 @@ Track C emits typed browser signals on `window` using the `nurture:lifecycle-sig
 - `onboarding.step_completed`
 - `onboarding.completed`
 
-Signals include an event ID, schema version, browser occurrence time, correlation/idempotency IDs, identity/customer/lead **hints**, and bounded non-PII payload. They are deliberately labeled `transport: "browser"` and `trust: "client-observed"`; Track C does not assign the persisted lifecycle `source`. Track F should normalize the `nurture:lifecycle-signal` hook through its submission validator (or replace the hook with a direct Track F sink after composition), and Track E/the trusted lifecycle service must bind verified organization scope, `receivedAt`, source, subject, and customer context before persistence.
+Signals include an event ID, schema version, browser occurrence time, correlation/idempotency IDs, identity/customer/lead **hints**, and bounded non-PII payload. They are deliberately labeled `transport: "browser"` and `trust: "client-observed"`; Track C does not assign the persisted lifecycle `source`.
 
-## 9. Cross-track handoffs
+The default `IdentityLifecycleSink` preserves the existing `nurture:lifecycle-signal` compatibility hook. For final composition, `setIdentityLifecycleSink(createIdentityAnalyticsSink(trackAnalyticsEvent))` can bind Track C directly to Track F's completed `trackAnalyticsEvent` API without either feature importing the other's implementation branch. Track F/Track E still bind verified organization scope, `receivedAt`, trusted source, subject, and customer context before persistence.
 
-**Track A — Configuration + Public Shell:** Public CTAs may pass `entryPoint`, `organizationId`, `offerId`, `referralCode`, `source`, and a validated `returnTo` into registration. Track A may call `captureInitialLead` for a permitted lead form. It must not write customer profiles directly.
+Instrumentation failure is deliberately non-blocking for registration/onboarding behavior.
 
-**Track B — Experience Architecture:** Consume the provider-neutral customer/session boundary and supply minimal setup requirements through `OnboardingExtension`. `customerScopeSource` is structurally compatible with Track B's customer source but intentionally fails closed when an `organizationId` is supplied; an organization-scoped Experience requires the trusted Customer mapping described below. Do not import Firebase Auth inside an Experience module. Do not use onboarding completion as an entitlement grant.
+## 9. Cross-track handoffs after completed-track review
 
-**Track D — Billing:** Registration/onboarding never manufactures subscription state or entitlement. Track D PR #10 resolves exactly one `organizations/{organizationId}/customers/*` record by `identityId` before checkout; the global `CustomerProfile` in this branch deliberately does not masquerade as that organization-scoped record. Release 1 convergence therefore needs a trusted organization-Customer bootstrap/link operation after organization context is verified. A checkout return can land in onboarding, but paid capability still follows the trusted billing → entitlement path.
+**Track A — Configuration + Public Shell (PR #7):** Public CTAs may pass `entryPoint`, `organizationId`, `offerId`, `referralCode`, `source`, and a validated `returnTo` into registration. Track A may call `captureInitialLead` for a permitted lead form. It must not write customer profiles directly. No additional Track C change is needed for Track A's published configuration boundary.
 
-**Track E — Platform/Security:** Own Firestore rules, server-side authorization, audit policy, and organization membership. The identity collections above are the explicit rule handoff.
+**Track B — Experience Architecture (PR #6):** `customerScopeSource` now supplies the stable Customer identifier Track B expects while organization scope remains independent. Track C also supplies the concrete module-requirement adapter and `ExperienceOnboardingBridge`. Experience code never imports Firebase Auth, writes onboarding state directly, accepts agreements, or uses onboarding completion as an entitlement grant.
 
-**Track F — Analytics:** Normalize/ingest the `nurture:lifecycle-signal` hook through the common submission contract. Track C emits successful-domain-action signals with untrusted identity/customer hints; Track F/Track E decide the persisted trusted source/binding. Browser transport alone cannot establish tenant authority or privileged state.
+**Track D — Offers + Billing (PR #10):** Track D now reads `identityCustomers/{identityUid}` and consumes the stored stable `customerId`; Track C therefore does not create a competing organization-Customer record. Billing remains organization-scoped and server-trusted. Registration/onboarding never manufactures subscription state or entitlement, and a checkout return URL cannot grant paid capability.
+
+**Track E — Platform/Security (PR #8):** Track E owns Firestore rules, server-side authorization, audit policy, organization membership, provider ports, and trusted event/auth verification. The identity collections above are the explicit security-rule handoff; Track C does not widen tenant authority to make client persistence convenient.
+
+**Track F — Analytics (PR #9):** Track C exposes a direct structural sink adapter for Track F's `trackAnalyticsEvent`, preserving event/correlation/idempotency IDs and untrusted subject hints. Browser transport cannot establish tenant authority, payment, entitlement, or privileged state.
 
 ## 10. Release 1 acceptance evidence
 
@@ -131,8 +146,10 @@ Track C is ready for integration when the combined environment can demonstrate:
 3. sign-in/sign-out/recovery and verification states function against the existing Firebase project configuration;
 4. `/app/*` rejects anonymous/unregistered state;
 5. onboarding saves each step, survives reload, resumes correctly, and records completion;
-6. the completed customer reaches the participant application in authenticated state;
-7. Track E rules prevent another authenticated UID from reading or mutating these identity-owned records;
-8. Track F receives the required lifecycle signals without treating browser-origin claims as trusted authority.
+6. a declared Experience onboarding requirement can complete only through the Track C bridge and only when it is the current step;
+7. the completed customer reaches the participant application in authenticated state;
+8. Track D can resolve the same stable customer ID without equating it to the Firebase UID;
+9. Track E rules prevent another authenticated UID from reading or mutating these identity-owned records;
+10. Track F receives the required lifecycle submissions without treating browser-origin claims as trusted authority.
 
 CI typecheck/build and the integrated Release 1 E2E test remain the merge gates; this branch does not claim Firebase rule deployment or production verification that belongs to the horizontal tracks.
