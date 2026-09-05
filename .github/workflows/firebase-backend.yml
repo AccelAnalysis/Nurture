@@ -66,7 +66,12 @@ jobs:
           echo "Active Google Cloud project: ${ACTIVE_PROJECT}"
           test "${ACTIVE_EMAIL}" = "${EXPECTED_EMAIL}"
           test "${ACTIVE_PROJECT}" = "nurture-12398"
-          FIRESTORE_STATE="$(gcloud services describe firestore.googleapis.com --project=nurture-12398 --format='value(state)')"
+          ACCESS_TOKEN="$(gcloud auth print-access-token)"
+          curl -fsS \
+            -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+            "https://serviceusage.googleapis.com/v1/projects/nurture-12398/services/firestore.googleapis.com" \
+            > /tmp/firestore-service.json
+          FIRESTORE_STATE="$(node -e "const fs=require('fs'); const x=JSON.parse(fs.readFileSync('/tmp/firestore-service.json','utf8')); process.stdout.write(x.state || '')")"
           echo "Firestore API state: ${FIRESTORE_STATE}"
           test "${FIRESTORE_STATE}" = "ENABLED"
         env:
@@ -106,8 +111,13 @@ jobs:
           echo "Active Google Cloud project: ${ACTIVE_PROJECT}"
           test "${ACTIVE_EMAIL}" = "${EXPECTED_EMAIL}"
           test "${ACTIVE_PROJECT}" = "nurture-12398"
+          ACCESS_TOKEN="$(gcloud auth print-access-token)"
           for api in cloudfunctions.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com run.googleapis.com eventarc.googleapis.com pubsub.googleapis.com cloudscheduler.googleapis.com; do
-            state="$(gcloud services describe "$api" --project=nurture-12398 --format='value(state)')"
+            curl -fsS \
+              -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+              "https://serviceusage.googleapis.com/v1/projects/nurture-12398/services/${api}" \
+              > /tmp/service.json
+            state="$(node -e "const fs=require('fs'); const x=JSON.parse(fs.readFileSync('/tmp/service.json','utf8')); process.stdout.write(x.state || '')")"
             echo "$api: $state"
             test "$state" = "ENABLED"
           done
