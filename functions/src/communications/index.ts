@@ -12,15 +12,13 @@ export { getSendGridEmailAdapter, SendGridEmailAdapter } from "./sendgrid-adapte
 export {
   adaptCurrentConsent,
   createAcquisitionEmailDispatchAdapter,
-  mapAcquisitionPurpose,
-  parseCommunicationTemplateVersionId,
+  mapEligibilityForAcquisition,
   requireApprovedCommunicationTemplateId,
-  type AcquisitionCommunicationInput,
-  type AcquisitionCommunicationSubmitInput,
   type CurrentCommunicationConsentFact,
   type CurrentCommunicationContext,
   type CurrentCommunicationContextPort,
 } from "./acquisition-dispatch.js";
+export { getEffectiveEmailSuppression, recordOrganizationMarketingSuppression } from "./suppression.js";
 export {
   listPendingCommunicationEventOutbox,
   markCommunicationEventOutboxAppended,
