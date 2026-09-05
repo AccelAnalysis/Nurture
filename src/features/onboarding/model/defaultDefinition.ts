@@ -106,13 +106,18 @@ function namespacedStep(extension: OnboardingExtension, step: OnboardingStepDefi
 /**
  * Track A can supply organization steps and Track B can supply Experience steps
  * without either track importing or replacing the onboarding implementation.
+ * Extension requirements are inserted before the final `ready` checkpoint so
+ * the UI never declares setup complete before those required steps are done.
  */
 export function resolveOnboardingDefinition(
   base: OnboardingDefinition = defaultOnboardingDefinition,
   extensions: OnboardingExtension[] = [],
 ): OnboardingDefinition {
   const extensionSteps = extensions.flatMap((extension) => extension.steps.map((step) => namespacedStep(extension, step)));
-  const allSteps = [...base.steps, ...extensionSteps];
+  const readyIndex = base.steps.findIndex((step) => step.id === "ready");
+  const allSteps = readyIndex >= 0
+    ? [...base.steps.slice(0, readyIndex), ...extensionSteps, ...base.steps.slice(readyIndex)]
+    : [...base.steps, ...extensionSteps];
   const ids = new Set<string>();
   const routes = new Set<string>();
   for (const step of allSteps) {
