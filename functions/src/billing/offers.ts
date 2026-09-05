@@ -3,6 +3,7 @@ import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { createReleaseOneDefaultOffers } from "../../../shared/billing/defaults.js";
 import type { CommercialOffer } from "../../../shared/billing/contracts.js";
 import { billingTrialsEnabled, stripeSecretKey } from "./config.js";
+import { resolveCustomerId } from "./customer-binding.js";
 import {
   parseCommercialOffer,
   parseRequiredId,
@@ -13,7 +14,6 @@ import {
   getOfferRecord,
   listOfferRecords,
   publishOfferWithAudit,
-  resolveCustomerId,
   saveOfferDraftWithAudit,
   seedOfferWithAudit,
   writeLifecycleEvent,
