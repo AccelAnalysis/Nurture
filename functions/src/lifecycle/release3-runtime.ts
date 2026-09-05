@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { onDocumentCreated } from "firebase-functions/v2/firestore";
 import { onSchedule } from "firebase-functions/v2/scheduler";
+import { FeedbackError, type FeedbackScope } from "../../../shared/feedback/contracts.js";
 import type { AutomationDefinitionV3, InAppTreatmentIntent, SegmentFact } from "../../../shared/release3/contracts.js";
 import { planEffects } from "../../../shared/release3/runtime.js";
 import {
@@ -10,6 +11,10 @@ import {
   type RetentionProjectionState,
 } from "../../../shared/release3/retention-projections.js";
 import { putInAppTreatmentIntent } from "../communications/in-app.js";
+import { createRelease4FeedbackComposition, RELEASE4_FEEDBACK_TOKEN_SECRET } from "../feedback/bootstrap.js";
+import { loadReferralPresentation, loadSurveyPresentation } from "../feedback/presentation.js";
+import { ReferralService } from "../feedback/referrals.js";
+import { SurveyService } from "../feedback/surveys.js";
 import { db } from "../firebase.js";
 
 function hashId(value: string) { return createHash("sha256").update(value).digest("hex"); }
@@ -134,6 +139,75 @@ async function loadPublishedDefinition(run: Release3RunRecord) {
   return definition;
 }
 
+async function executeFeedbackInApp(
+  run: Release3RunRecord,
+  action: Extract<AutomationDefinitionV3["branches"][number]["actions"][number], { type: "in-app" }>,
+  effectId: string,
+  reference: FirebaseFirestore.DocumentReference,
+  now: string,
+): Promise<string | null> {
+  if (run.dataMode === "preview" || run.dataMode === "demo") {
+    await reference.set({ effectId, runId: run.runId, organizationId: run.organizationId, customerId: run.customerId, action, state: "pending", reversible: true, reason: "mode-not-allowed", updatedAt: now }, { merge: false });
+    return "mode-not-allowed";
+  }
+
+  const scope: FeedbackScope = { organizationId: run.organizationId, dataMode: run.dataMode };
+  const { deps } = createRelease4FeedbackComposition();
+  try {
+    if (run.definition.kind === "survey") {
+      const survey = new SurveyService(deps);
+      const { invitationId } = await survey.invite(scope, action.templateId, run.customerId, hashId(effectId));
+      const presentation = await loadSurveyPresentation(deps, scope, invitationId);
+      const intent: InAppTreatmentIntent = {
+        treatmentId: effectId,
+        runId: run.runId,
+        organizationId: run.organizationId,
+        customerId: run.customerId,
+        placementId: action.placementId,
+        templateId: action.templateId,
+        templateVersion: action.templateVersion,
+        title: presentation.title,
+        body: presentation.body,
+        cta: presentation.cta,
+        purpose: action.purpose,
+        availableFrom: now,
+        mode: run.dataMode,
+      };
+      await putInAppTreatmentIntent(intent);
+      await reference.set({ effectId, runId: run.runId, organizationId: run.organizationId, customerId: run.customerId, action, feedbackInvitationId: invitationId, feedbackVersionId: presentation.versionId, state: "confirmed", reversible: true, confirmedAt: now, updatedAt: now }, { merge: false });
+      return null;
+    }
+
+    const referrals = new ReferralService(deps);
+    const { invitationId } = await referrals.invite(scope, action.templateId, run.customerId, run.triggerId);
+    const presentation = await loadReferralPresentation(deps, scope, invitationId);
+    const intent: InAppTreatmentIntent = {
+      treatmentId: effectId,
+      runId: run.runId,
+      organizationId: run.organizationId,
+      customerId: run.customerId,
+      placementId: action.placementId,
+      templateId: action.templateId,
+      templateVersion: action.templateVersion,
+      title: presentation.title,
+      body: presentation.body,
+      cta: presentation.cta,
+      purpose: action.purpose,
+      availableFrom: now,
+      mode: run.dataMode,
+    };
+    await putInAppTreatmentIntent(intent);
+    await reference.set({ effectId, runId: run.runId, organizationId: run.organizationId, customerId: run.customerId, action, feedbackInvitationId: invitationId, feedbackVersionId: presentation.versionId, state: "confirmed", reversible: true, confirmedAt: now, updatedAt: now }, { merge: false });
+    return null;
+  } catch (error) {
+    if (error instanceof FeedbackError) {
+      await reference.set({ effectId, runId: run.runId, organizationId: run.organizationId, customerId: run.customerId, action, state: "pending", reversible: true, reason: error.code, updatedAt: now }, { merge: false });
+      return error.code;
+    }
+    throw error;
+  }
+}
+
 async function executeRun(snapshot: FirebaseFirestore.QueryDocumentSnapshot) {
   const run = snapshot.data() as Release3RunRecord;
   if (run.state !== "scheduled" && run.state !== "retrying") return;
@@ -200,6 +274,12 @@ async function executeRun(snapshot: FirebaseFirestore.QueryDocumentSnapshot) {
       continue;
     }
 
+    if (definition.kind === "survey" || definition.kind === "referral") {
+      const feedbackReason = await executeFeedbackInApp(run, effect.action, effect.effectId, reference, now);
+      if (feedbackReason) heldReason = feedbackReason;
+      continue;
+    }
+
     const template = await orgRef(run.organizationId).collection("release3InAppTemplates").doc(`${effect.action.templateId}__v${effect.action.templateVersion}`).get();
     const templateData = template.data();
     if (!template.exists || templateData?.status !== "published" || typeof templateData.title !== "string" || typeof templateData.body !== "string") {
@@ -230,8 +310,8 @@ async function executeRun(snapshot: FirebaseFirestore.QueryDocumentSnapshot) {
   await snapshot.ref.set({ state: heldReason ? "held" : "succeeded", reasons: heldReason ? [heldReason] : [], completedAt: heldReason ? null : now, updatedAt: now }, { merge: true });
 }
 
-/** Durable Release 3 worker. The highest-risk channel (email) is hard-held here. */
-export const r3DrainLifecycleRuns = onSchedule("every 5 minutes", async () => {
+/** Durable Release 3 worker. R4 feedback uses this same worker and effect ledger. */
+export const r3DrainLifecycleRuns = onSchedule({ schedule: "every 5 minutes", secrets: [RELEASE4_FEEDBACK_TOKEN_SECRET] }, async () => {
   const now = new Date().toISOString();
   const due = await db.collectionGroup("release3Runs").where("state", "in", ["scheduled", "retrying"]).where("dueAt", "<=", now).orderBy("dueAt", "asc").limit(50).get();
   for (const snapshot of due.docs) await executeRun(snapshot);
