@@ -112,8 +112,9 @@ export function AppRouter() {
     }
 
     const detail = fifth;
+    const brandViewCapability = organizationSectionCapability.brand ?? "settings.manage";
     const capability = section === "brand-site"
-      ? "settings.manage"
+      ? brandViewCapability
       : organizationSectionCapability[section] ?? "workspace.view";
     const content = section === "brand-site"
       ? <BrandSiteAdminPage organizationId={organizationId} />
