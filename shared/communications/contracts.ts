@@ -13,6 +13,14 @@ export const communicationTemplateIds = [
   "activation-invitation",
   "trial-conversion",
   "checkout-recovery",
+  "survey-invitation",
+  "survey-reminder",
+  "survey-thanks",
+  "feedback-recovery",
+  "referral-invitation",
+  "referral-status",
+  "referral-reward-issued",
+  "referral-reward-reversed",
 ] as const;
 export type CommunicationTemplateId = (typeof communicationTemplateIds)[number];
 
@@ -30,6 +38,9 @@ export const communicationVariableKeys = [
   "application.publicUrl",
   "preferences.url",
   "support.email",
+  "survey.title",
+  "survey.url",
+  "referral.centerUrl",
 ] as const;
 export type CommunicationVariableKey = (typeof communicationVariableKeys)[number];
 export type CommunicationVariableValues = Partial<Record<CommunicationVariableKey, string>>;
