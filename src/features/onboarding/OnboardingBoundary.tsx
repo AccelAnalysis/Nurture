@@ -151,7 +151,7 @@ export function OnboardingRouteBoundary({ step }: { step?: string }) {
 
   return (
     <main className="auth-shell">
-      <Link className="brand" href="/"><img src="/brand/logo/nurture-n.svg" alt="" /><span>Nurture</span></Link>
+      <Link className="brand" href="/"><img src="/brand/logo/nurture-n-glass.png" alt="" /><span>Nurture</span></Link>
       <section className="auth-card-wrap">
         <PageHeader eyebrow="Registration + onboarding" title={activeStep.label} description={activeStep.description} />
         <Card>
