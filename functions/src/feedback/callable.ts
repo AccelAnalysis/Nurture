@@ -12,10 +12,9 @@ export interface FeedbackBoundary {
   /** Existing abuse/cap service must rate-limit anonymous and authenticated calls before token lookup. */
   rateLimit(request: CallableRequest<unknown>, context: FeedbackRequestContext): Promise<void>;
 }
-/** Factory only: this file is NOT exported from the deployed Functions entrypoint until R3 integration acceptance. */
-export function createFeedbackCallable(deps: FeedbackDependencies, boundary: FeedbackBoundary) {
+export function createFeedbackCallable(deps: FeedbackDependencies, boundary: FeedbackBoundary, secretNames: string[] = []) {
   const command = feedbackCommands(deps);
-  return onCall({ region: "us-central1", enforceAppCheck: true, maxInstances: 10 }, async request => {
+  return onCall({ region: "us-central1", enforceAppCheck: true, maxInstances: 10, secrets: secretNames }, async request => {
     try {
       invariant(request.app, "permission-denied");
       const body = record(request.data); onlyKeys(body,["applicationKey","action","payload"]);
