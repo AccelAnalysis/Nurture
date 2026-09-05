@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { createReleaseOneDefaultOffers } from "../../../shared/billing/defaults.js";
 import type { CommercialOffer } from "../../../shared/billing/contracts.js";
-import { stripeSecretKey } from "./config.js";
+import { billingTrialsEnabled, stripeSecretKey } from "./config.js";
 import {
   parseCommercialOffer,
   parseRequiredId,
@@ -12,10 +12,10 @@ import {
   assertOrganizationCapability,
   getOfferRecord,
   listOfferRecords,
-  offerRef,
+  publishOfferWithAudit,
   resolveCustomerId,
-  saveOfferRecord,
-  writeAuditEvent,
+  saveOfferDraftWithAudit,
+  seedOfferWithAudit,
   writeLifecycleEvent,
 } from "./store.js";
 import { validateStripePriceMapping } from "./stripe-adapter.js";
@@ -56,7 +56,7 @@ export const listPublishedOffers = onCall(async (request) => {
         && (offer.visibility === "public" || (customerId && offer.visibility === "authenticated")),
       ))
       .sort((a, b) => a.order - b.order);
-    return { offers };
+    return { offers, trialsEnabled: billingTrialsEnabled.value() };
   } catch (error) {
     asPrecondition(error);
   }
@@ -81,30 +81,10 @@ export const seedReleaseOneOffers = onCall(async (request) => {
     const organizationId = parseRequiredId(data.organizationId, "organizationId");
     const userId = requireUserId(request.auth);
     await assertOrganizationCapability(organizationId, userId, "offers.manage");
-    const now = new Date().toISOString();
     let created = 0;
     for (const template of createReleaseOneDefaultOffers(organizationId)) {
-      const ref = offerRef(organizationId, template.id);
-      if ((await ref.get()).exists) continue;
-      const draft = { ...template, updatedAt: now };
-      const record = template.status === "published"
-        ? { draft, published: { ...draft, status: "published" as const, publishedAt: now }, updatedAt: now }
-        : { draft: { ...draft, status: "draft" as const }, updatedAt: now };
-      try {
-        await ref.create(record);
-        created += 1;
-      } catch (error) {
-        const code = (error as { code?: string | number }).code;
-        if (code !== 6 && code !== "6" && code !== "already-exists") throw error;
-      }
+      if (await seedOfferWithAudit({ organizationId, template, actorUserId: userId })) created += 1;
     }
-    await writeAuditEvent({
-      organizationId,
-      actorUserId: userId,
-      action: "billing.offers.defaults_seeded",
-      targetType: "offer-set",
-      context: { created },
-    });
     return { created };
   } catch (error) {
     asPrecondition(error);
@@ -128,19 +108,7 @@ export const saveOfferDraft = onCall(async (request) => {
       version: existing?.published?.version ?? parsed.version,
       updatedAt: now,
     };
-    await saveOfferRecord(organizationId, parsed.id, {
-      draft,
-      ...(existing?.published ? { published: existing.published } : {}),
-      updatedAt: now,
-    });
-    await writeAuditEvent({
-      organizationId,
-      actorUserId: userId,
-      action: "billing.offer.draft_saved",
-      targetType: "offer",
-      targetId: parsed.id,
-      context: { version: draft.version, hasPublishedVersion: Boolean(existing?.published) },
-    });
+    await saveOfferDraftWithAudit({ organizationId, offer: draft, actorUserId: userId });
     return { offer: draft };
   } catch (error) {
     asPrecondition(error);
@@ -156,31 +124,18 @@ export const publishOffer = onCall({ secrets: [stripeSecretKey] }, async (reques
     await assertOrganizationCapability(organizationId, userId, "offers.publish");
     const record = await getOfferRecord(organizationId, offerId);
     if (!record) throw new HttpsError("not-found", "Offer not found.");
+    if (record.draft.status === "published" && record.published?.updatedAt === record.draft.updatedAt) {
+      return { offer: record.published };
+    }
     validateOfferForPublish(record.draft);
     for (const price of record.draft.prices.filter((item) => item.active && item.unitAmountMinor > 0)) {
       await validateStripePriceMapping(price);
     }
-    const now = new Date().toISOString();
-    const version = (record.published?.version ?? 0) + 1;
-    const published: CommercialOffer = {
-      ...record.draft,
-      status: "published",
-      version,
-      publishedAt: now,
-      updatedAt: now,
-    };
-    await saveOfferRecord(organizationId, offerId, {
-      draft: published,
-      published,
-      updatedAt: now,
-    });
-    await writeAuditEvent({
+    const published = await publishOfferWithAudit({
       organizationId,
+      offerId,
+      expectedDraftUpdatedAt: record.draft.updatedAt,
       actorUserId: userId,
-      action: "billing.offer.published",
-      targetType: "offer",
-      targetId: offerId,
-      context: { version },
     });
     return { offer: published };
   } catch (error) {
