@@ -119,56 +119,14 @@ export interface ExperienceProfileRequirement {
 }
 
 /**
- * Track B mirrors the public shape of Track C's onboarding extension contract
- * without importing Track C implementation code. The helper in onboarding.ts
- * projects these requirements to `{ source: "experience", namespace, steps }`.
+ * Modules describe only the requirement. Track C owns conversion into its
+ * namespaced OnboardingExtension, ordering, validation, persistence, and
+ * completion. Track B never writes onboarding state directly.
  */
-export type ExperienceOnboardingFieldType = "text" | "email" | "tel" | "textarea" | "checkbox" | "select";
-
-export interface ExperienceOnboardingFieldOption {
-  value: string;
-  label: string;
-}
-
-export interface ExperienceOnboardingFieldDefinition {
+export interface ExperienceOnboardingRequirement {
   id: string;
   label: string;
-  type: ExperienceOnboardingFieldType;
-  required: boolean;
-  purpose: string;
-  placeholder?: string;
-  profileField?: "displayName" | "firstName" | "lastName" | "phone";
-  preferenceField?: string;
-  options?: ExperienceOnboardingFieldOption[];
-}
-
-export interface ExperienceOnboardingAgreementDefinition {
-  id: string;
-  version: string;
-  label: string;
-  required: boolean;
-  href?: string;
-}
-
-export interface ExperienceOnboardingStepDefinition {
-  id: string;
-  route: string;
-  label: string;
-  description: string;
-  optional: boolean;
-  fields?: ExperienceOnboardingFieldDefinition[];
-  agreement?: ExperienceOnboardingAgreementDefinition;
-}
-
-export interface ExperienceOnboardingRequirement extends ExperienceOnboardingStepDefinition {
-  /** Human-readable completion rule retained in the Experience manifest. */
   completion: string;
-}
-
-export interface ExperienceOnboardingExtension {
-  source: "experience";
-  namespace: string;
-  steps: ExperienceOnboardingStepDefinition[];
 }
 
 export interface ExperienceActivityDefinition {
@@ -277,9 +235,10 @@ export interface ExperienceDefinitionSource {
 }
 
 /**
- * Track C integration. Release 1 resolves the stable Nurture Customer/Profile
- * identity independently of tenant scope; organization scope is carried and
- * re-checked by the Experience/entitlement records.
+ * Track C integration. Track C returns the stable Nurture Customer/Profile ID
+ * even when organization context is supplied. The organization value remains
+ * context only; tenant authority is re-bound by Track E and re-checked by the
+ * entitlement/protected-operation boundary.
  */
 export interface ExperienceCustomerRequest {
   organizationId?: string;
