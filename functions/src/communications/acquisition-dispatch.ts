@@ -305,9 +305,7 @@ export function createAcquisitionEmailDispatchAdapter(
         effectId: input.idempotencyKey || input.effectId,
         mode: input.dataMode,
         purpose: evaluated.purpose,
-        recipient: input.dataMode === "test"
-          ? { kind: "test", id: evaluated.context.recipientRef }
-          : { kind: input.subjectKind, id: input.subjectId },
+        recipient: { kind: input.subjectKind, id: input.subjectId },
         templateId: evaluated.templateId,
         templateVersion: evaluated.templateVersion,
         variables: evaluated.context.variables,
@@ -318,6 +316,7 @@ export function createAcquisitionEmailDispatchAdapter(
         testAllowlisted: input.dataMode === "test"
           ? getControlledTestAllowlist().has(normalizeEmailAddress(evaluated.context.recipientEmail))
           : undefined,
+        eligibilityRecipientKind: input.dataMode === "test" ? "test" : input.subjectKind,
       }, provider);
 
       return mapRecordToSubmission(result.record);
