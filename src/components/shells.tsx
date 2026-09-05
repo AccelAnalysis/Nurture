@@ -9,7 +9,7 @@ import { organizationSectionCapability, type OrganizationCapability, type Platfo
 import { Avatar, Badge, EmptyState } from "./ui";
 
 export function Brand() {
-  return <Link className="brand" href="/"><img src="/brand/logo/nurture-n.svg" alt="" /><span>Nurture</span></Link>;
+  return <Link className="brand" href="/"><img src="/brand/logo/nurture-n-glass.png" alt="" /><span>Nurture</span></Link>;
 }
 
 export function PublicShell({ children }: { children: ReactNode }) {

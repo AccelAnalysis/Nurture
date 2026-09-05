@@ -212,7 +212,7 @@ export const referenceAssessmentModule: ExperienceModule = {
     contractVersion: "1.1.0",
     name: "Momentum Check",
     description: "A deliberately small reference Experience proving trial, authenticated, entitlement, media, routing, and lifecycle boundaries.",
-    icon: "/brand/logo/nurture-n.svg",
+    icon: "/brand/logo/nurture-n-glass.png",
     routes: [
       { path: "", label: "Check", access: ["public", "trial", "authenticated"], capability: REFERENCE_ASSESSMENT_CAPABILITIES.preview },
       { path: "review", label: "Review", access: ["authenticated"], capability: REFERENCE_ASSESSMENT_CAPABILITIES.review },

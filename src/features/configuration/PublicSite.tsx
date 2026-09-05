@@ -46,7 +46,7 @@ function vimeoId(value: string) {
 function MediaFallback({ asset, message }: { asset: MediaAsset; message: string }) {
   return (
     <div className="track-a-media-fallback" role="img" aria-label={asset.alt || "Nurture media fallback"}>
-      <img src="/brand/logo/nurture-n.svg" alt="" />
+      <img src="/brand/logo/nurture-n-glass.png" alt="" />
       <p>{message}</p>
       {asset.url.startsWith("https://") ? <a href={asset.url} target="_blank" rel="noreferrer">Open media source</a> : null}
     </div>
@@ -62,7 +62,7 @@ export function HeroMedia({ asset }: { asset: MediaAsset }) {
   if (asset.kind === "none") {
     return (
       <div className="track-a-default-hero-mark" aria-hidden="true">
-        <img src="/brand/logo/nurture-n.svg" alt="" />
+        <img src="/brand/logo/nurture-n-glass.png" alt="" />
       </div>
     );
   }
@@ -129,7 +129,7 @@ export function HeroMedia({ asset }: { asset: MediaAsset }) {
 export function ConfiguredBrand({ configuration, link = true }: { configuration: OrganizationConfiguration; link?: boolean }) {
   const content = (
     <>
-      <img src={configuration.brand.logoUrl} alt="" onError={(event) => { event.currentTarget.src = "/brand/logo/nurture-n.svg"; }} />
+      <img src={configuration.brand.logoUrl} alt="" onError={(event) => { event.currentTarget.src = "/brand/logo/nurture-n-glass.png"; }} />
       <span>{configuration.brand.applicationName}</span>
     </>
   );

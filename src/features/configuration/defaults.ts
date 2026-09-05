@@ -27,7 +27,7 @@ export function createNurtureDefaultConfiguration(organizationId: string): Organ
     baseTemplateVersion: NURTURE_DEFAULT_TEMPLATE_VERSION,
     brand: {
       applicationName: "Nurture",
-      logoUrl: "/brand/logo/nurture-n.svg",
+      logoUrl: "/brand/logo/nurture-n-glass.png",
       logoAlt: "Nurture",
       accentColor: "#0264EC",
       appearance: "system",

@@ -19,7 +19,7 @@
     }
     main { width: min(1120px, calc(100% - 32px)); margin: 0 auto; padding: 56px 0 96px; }
     header { display: flex; align-items: center; gap: 24px; margin-bottom: 40px; }
-    .logo { width: 96px; height: 96px; }
+    .logo { width: 96px; height: 96px; object-fit: contain; }
     h1 { font-size: clamp(34px, 6vw, 56px); line-height: 1; letter-spacing: -0.035em; margin: 0 0 10px; }
     p { color: var(--n-text-secondary); line-height: 1.5; }
     .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 16px; }
@@ -45,7 +45,7 @@
 <body>
   <main>
     <header>
-      <img class="logo" src="./logo/nurture-n.svg" alt="Nurture N logo" />
+      <img class="logo" src="./logo/nurture-n-glass.png" alt="Nurture N logo" />
       <div>
         <h1>Nurture</h1>
         <p>Brand system preview · content-first · glass used with restraint</p>

@@ -45,7 +45,7 @@ try {
   await page.locator('h1').waitFor();
   assert.match(await page.evaluate(() => getComputedStyle(document.body).fontFamily), /sans-serif/, 'Canonical system typography must be applied.');
   assert.equal(await page.locator('.public-header .header-actions > a.button').evaluate((button) => getComputedStyle(button).color), 'rgb(255, 255, 255)', 'Primary header CTA must preserve contrasting white text.');
-  assert.equal(await page.locator('img[src="/brand/logo/nurture-n.svg"]').first().evaluate((img) => img.complete && img.naturalWidth > 0), true, 'Canonical N logo must load.');
+  assert.equal(await page.locator('img[src="/brand/logo/nurture-n-glass.png"]').first().evaluate((img) => img.complete && img.naturalWidth > 0), true, 'Canonical N logo must load.');
   await page.screenshot({ path: `${output}/home-desktop.png`, fullPage: true });
   console.log('Checking reference Experience completion');
   await page.goto(`${base}/experience`, { waitUntil: 'domcontentloaded' });

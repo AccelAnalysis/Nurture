@@ -2,7 +2,7 @@
 
 **Status:** canonical foundation  
 **Version:** 0.1.0  
-**Updated:** 2026-09-04
+**Updated:** 2026-09-05
 
 This directory is the shared source of truth for Nurture visual identity across web, mobile-web, native, marketing, and future app builds. The system keeps the Accel Analysis blue-to-cyan family while giving Nurture its own unmistakable ribbon **N** and a restrained glass material language.
 
@@ -22,9 +22,9 @@ The requested glassmorphism direction is implemented as **functional glass** ins
 
 ### Primary mark
 
-`brand/logo/nurture-n.svg` is the canonical Nurture mark. It translates the Accel Analysis folded-ribbon language into a direct **N** using the same deep-blue → electric-blue → cyan family.
+`brand/logo/nurture-n-glass.png` is the canonical Nurture mark. It is the supplied glossy folded-ribbon **N**, stored as a native transparent PNG rather than embedded inside an SVG wrapper.
 
-Use the gradient mark on neutral or quiet backgrounds. Use `brand/logo/nurture-n-mono.svg` when color reproduction is limited or a single-color mark is required.
+Use the glass mark on neutral or quiet backgrounds. Use `brand/logo/nurture-n-mono.svg` when color reproduction is limited or a single-color mark is required.
 
 ### Clear space
 
@@ -41,7 +41,7 @@ Maintain clear space around the mark equal to at least **25% of the mark's visib
 - Rotate, skew, stretch, outline, or rearrange the N.
 - Substitute arbitrary gradients or unrelated brand colors.
 - Place the gradient mark on a visually noisy background without a neutral or glass container.
-- Add permanent drop shadows, glows, bevels, or text inside the mark.
+- Add additional permanent effects to the supplied glossy artwork.
 - Repeat the logo as decoration throughout product screens; branding must defer to the task and content.
 
 ### App icon guidance
@@ -195,13 +195,13 @@ Consume `brand/tokens.json` and map semantic tokens into the destination platfor
 
 ```text
 brand/
-├── README.md                 # this guide
-├── preview.html              # static visual preview
-├── tokens.json               # platform-neutral canonical tokens
-├── tokens.css                # CSS implementation + accessibility fallbacks
+├── README.md                     # this guide
+├── preview.html                  # static visual preview
+├── tokens.json                   # platform-neutral canonical tokens
+├── tokens.css                    # CSS implementation + accessibility fallbacks
 └── logo/
-    ├── nurture-n.svg         # canonical gradient N
-    └── nurture-n-mono.svg    # monochrome fallback
+    ├── nurture-n-glass.png       # canonical glossy N, native transparent PNG
+    └── nurture-n-mono.svg        # monochrome fallback
 ```
 
 Changes to `brand/tokens.json` or the canonical logo should be reviewed as brand-system changes, not incidental component edits. New modules should consume these shared assets rather than creating local copies of colors, radii, glass values, or logo artwork.

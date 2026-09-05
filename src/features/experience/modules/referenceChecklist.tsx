@@ -61,7 +61,7 @@ export const referenceChecklistModule: ExperienceModule = {
     contractVersion: "1.1.0",
     name: "Next-Step Checklist",
     description: "A second minimal module used to prove that a different Experience can register without changing the host lifecycle architecture.",
-    icon: "/brand/logo/nurture-n.svg",
+    icon: "/brand/logo/nurture-n-glass.png",
     routes: [
       { path: "", label: "Checklist", access: ["authenticated"], capability: "nurture.reference-checklist.use" },
     ],
