@@ -14,7 +14,7 @@ export function InAppTreatmentSurface({ context, placementId, bridge, onCommerci
   const [treatment, setTreatment] = useState<InAppTreatmentIntent | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "empty" | "dismissed" | "expired" | "error">("loading");
   const [error, setError] = useState<string>();
-  const presented = useRef<string>();
+  const presented = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     let active = true;
@@ -37,7 +37,7 @@ export function InAppTreatmentSurface({ context, placementId, bridge, onCommerci
   useEffect(() => {
     if (state !== "ready" || !treatment || presented.current === treatment.treatmentId) return;
     presented.current = treatment.treatmentId;
-    void bridge.recordTreatmentInteraction(buildTreatmentInteraction({ treatment, interaction: "presented", occurredAt: new Date().toISOString() }));
+    void bridge.recordTreatmentInteraction(buildTreatmentInteraction({ treatment, interaction: "presented", occurredAt: new Date().toISOString() })).catch(() => undefined);
   }, [bridge, state, treatment]);
 
   async function dismiss() {
