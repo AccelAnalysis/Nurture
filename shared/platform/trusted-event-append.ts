@@ -158,6 +158,45 @@ export class SecureLifecycleEventAppender {
     }
   }
 
+  private async assertTrustedCustomerScope(event: LifecycleEventEnvelope): Promise<void> {
+    const customerId = event.customerId ?? (event.subjectKind === "customer" ? event.subjectId : undefined);
+    if (!customerId) return;
+    if (event.subjectKind === "customer" && event.subjectId !== customerId) {
+      throw new TrustedEventAppendError(
+        "scope-mismatch",
+        "Trusted event customer subject contradicts its customer identifier.",
+      );
+    }
+    if (!this.bindingPort.resolveCustomer) {
+      throw new TrustedEventAppendError(
+        "binding-unavailable",
+        "Trusted customer scope cannot be verified by the configured binding adapter.",
+      );
+    }
+    const binding = await this.bindingPort.resolveCustomer({
+      organizationId: event.organizationId,
+      customerId,
+      correlationId: event.correlationId,
+    });
+    if (binding.status !== "ready") {
+      throw new TrustedEventAppendError(
+        "binding-unavailable",
+        `Trusted event customer binding is unavailable: ${binding.reason}.`,
+      );
+    }
+    if (
+      binding.binding.status !== "active"
+      || binding.binding.organizationId !== event.organizationId
+      || binding.binding.customerId !== customerId
+      || (event.identityId !== undefined && binding.binding.identityId !== event.identityId)
+    ) {
+      throw new TrustedEventAppendError(
+        "scope-mismatch",
+        "Trusted event customer does not belong to the trusted organization scope.",
+      );
+    }
+  }
+
   /**
    * Authenticated browser signals are always bound as source=browser. A client
    * cannot promote its own request to domain_action, provider_webhook, or a
@@ -272,7 +311,8 @@ export class SecureLifecycleEventAppender {
    * Provider, scheduler, administrator, and trusted-server producers arrive as
    * already materialized envelopes. The caller supplies the expected scope and
    * source from trusted routing, and F remains authoritative for catalog/source
-   * validation before the durable store sees the event.
+   * validation before the durable store sees the event. Customer-bearing events
+   * are additionally verified against the canonical organization/customer store.
    */
   async appendTrustedEnvelope(input: {
     event: LifecycleEventEnvelope;
@@ -292,6 +332,7 @@ export class SecureLifecycleEventAppender {
         "Event source does not match the trusted producer route.",
       );
     }
+    await this.assertTrustedCustomerScope(event);
     await this.admit(event);
     return this.store.appendIfAbsent(event);
   }
