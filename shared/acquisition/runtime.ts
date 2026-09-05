@@ -49,7 +49,9 @@ function nowIso(dependencies: AcquisitionRuntimeDependencies): string {
 }
 
 function nextId(dependencies: AcquisitionRuntimeDependencies): string {
-  return dependencies.id?.() ?? globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return dependencies.id?.()
+    ?? globalThis.crypto?.randomUUID?.()
+    ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 function parseTime(label: string, value: string): number {
@@ -64,6 +66,10 @@ function addSeconds(timestamp: string, seconds: number): string {
 
 function subtractSeconds(timestamp: string, seconds: number): string {
   return new Date(parseTime("timestamp", timestamp) - seconds * 1000).toISOString();
+}
+
+function laterTimestamp(left: string, right: string): string {
+  return parseTime("left timestamp", left) >= parseTime("right timestamp", right) ? left : right;
 }
 
 function stableRuntimeId(prefix: string, parts: readonly string[]): string {
@@ -157,7 +163,10 @@ function enrollmentStateReadInput(input: {
   };
 }
 
-function stopRuleDecision(definition: AcquisitionAutomationDefinition, state: AcquisitionCurrentState): StateDecision | null {
+function stopRuleDecision(
+  definition: AcquisitionAutomationDefinition,
+  state: AcquisitionCurrentState,
+): StateDecision | null {
   for (const rule of definition.stopRules) {
     if (rule === "subject.deleted" && state.subject === "deleted") {
       return { disposition: "cancel", reason: "subject-deleted" };
@@ -185,9 +194,9 @@ function stopRuleDecision(definition: AcquisitionAutomationDefinition, state: Ac
 }
 
 /**
- * Current-state eligibility is intentionally conservative: unknown facts hold,
- * while known stop conditions cancel. This function consumes authoritative
- * domain/commercial reads supplied by C/B/D adapters, not F's stale projection.
+ * Conservative current-state admission. Unknown required facts hold; known stop
+ * conditions cancel. The state adapter must compose authoritative C/B/D/R1
+ * commercial sources. F's projection is observability, not permission to send.
  */
 export function evaluateAcquisitionCurrentState(
   definition: AcquisitionAutomationDefinition,
@@ -195,45 +204,86 @@ export function evaluateAcquisitionCurrentState(
 ): StateDecision {
   if (state.organization === "missing") return { disposition: "cancel", reason: "organization-missing" };
   if (state.organization === "paused") return { disposition: "cancel", reason: "organization-paused" };
-  if (state.organization === "unknown") return { disposition: "hold", reason: "state-unknown", detail: "Organization state is unknown." };
+  if (state.organization === "unknown") {
+    return { disposition: "hold", reason: "state-unknown", detail: "Organization state is unknown." };
+  }
   if (state.subject === "missing") return { disposition: "cancel", reason: "subject-missing" };
   if (state.subject === "deleted") return { disposition: "cancel", reason: "subject-deleted" };
-  if (state.subject === "unknown") return { disposition: "hold", reason: "state-unknown", detail: "Subject state is unknown." };
+  if (state.subject === "unknown") {
+    return { disposition: "hold", reason: "state-unknown", detail: "Subject state is unknown." };
+  }
 
   const stop = stopRuleDecision(definition, state);
   if (stop) return stop;
 
   for (const predicate of definition.predicates) {
     if (predicate === "subject.active") continue;
+
     if (predicate === "registration.incomplete") {
-      if (state.registration === "unknown") return { disposition: "hold", reason: "state-unknown", detail: "Registration state is unknown." };
-      if (state.registration !== "incomplete") return { disposition: "cancel", reason: "registration-completed" };
+      if (state.registration === "unknown") {
+        return { disposition: "hold", reason: "state-unknown", detail: "Registration state is unknown." };
+      }
+      if (state.registration !== "incomplete") {
+        return { disposition: "cancel", reason: "registration-completed" };
+      }
     }
+
     if (predicate === "registration.completed") {
-      if (state.registration === "unknown") return { disposition: "hold", reason: "state-unknown", detail: "Registration state is unknown." };
-      if (state.registration !== "completed") return { disposition: "cancel", reason: "registration-incomplete" };
+      if (state.registration === "unknown") {
+        return { disposition: "hold", reason: "state-unknown", detail: "Registration state is unknown." };
+      }
+      if (state.registration !== "completed") {
+        return { disposition: "cancel", reason: "registration-incomplete" };
+      }
     }
+
     if (predicate === "activation.missing") {
-      if (state.activation === "unknown") return { disposition: "hold", reason: "state-unknown", detail: "Activation state is unknown." };
-      if (state.activation !== "missing") return { disposition: "cancel", reason: "activation-completed" };
+      if (state.activation === "unknown") {
+        return { disposition: "hold", reason: "state-unknown", detail: "Activation state is unknown." };
+      }
+      if (state.activation !== "missing") {
+        return { disposition: "cancel", reason: "activation-completed" };
+      }
     }
+
     if (predicate === "onboarding.incomplete") {
-      if (state.onboarding.status === "unknown") return { disposition: "hold", reason: "state-unknown", detail: "Onboarding state is unknown." };
-      if (state.onboarding.status === "completed") return { disposition: "cancel", reason: "onboarding-completed" };
-      if (state.onboarding.status === "not-started") return { disposition: "hold", reason: "state-unknown", detail: "Onboarding has not started for an onboarding reminder." };
+      if (state.onboarding.status === "unknown") {
+        return { disposition: "hold", reason: "state-unknown", detail: "Onboarding state is unknown." };
+      }
+      if (state.onboarding.status === "completed") {
+        return { disposition: "cancel", reason: "onboarding-completed" };
+      }
+      if (state.onboarding.status === "not-started") {
+        return {
+          disposition: "hold",
+          reason: "state-unknown",
+          detail: "Onboarding has not started for an onboarding reminder.",
+        };
+      }
     }
+
     if (predicate === "trial.active") {
-      if (state.trial.status === "unknown") return { disposition: "hold", reason: "state-unknown", detail: "Trial state is unknown." };
+      if (state.trial.status === "unknown") {
+        return { disposition: "hold", reason: "state-unknown", detail: "Trial state is unknown." };
+      }
       if (state.trial.status === "ended") return { disposition: "cancel", reason: "trial-ended" };
       if (state.trial.status !== "active") return { disposition: "cancel", reason: "trial-not-active" };
     }
+
     if (predicate === "purchase.absent") {
-      if (state.purchase === "unknown") return { disposition: "hold", reason: "state-unknown", detail: "Purchase state is unknown." };
+      if (state.purchase === "unknown") {
+        return { disposition: "hold", reason: "state-unknown", detail: "Purchase state is unknown." };
+      }
       if (state.purchase !== "absent") return { disposition: "cancel", reason: "purchase-completed" };
     }
+
     if (predicate === "commercial.eligible") {
-      if (state.commercialEligibility === "unknown") return { disposition: "hold", reason: "state-unknown", detail: "Commercial eligibility is unknown." };
-      if (state.commercialEligibility !== "eligible") return { disposition: "cancel", reason: "commercial-ineligible" };
+      if (state.commercialEligibility === "unknown") {
+        return { disposition: "hold", reason: "state-unknown", detail: "Commercial eligibility is unknown." };
+      }
+      if (state.commercialEligibility !== "eligible") {
+        return { disposition: "cancel", reason: "commercial-ineligible" };
+      }
     }
   }
 
@@ -257,7 +307,9 @@ function scheduleDueAt(
   if (state.trial.status === "active" && state.trial.endsAt && !Number.isNaN(Date.parse(state.trial.endsAt))) {
     const target = subtractSeconds(state.trial.endsAt, step.schedule.offsetSeconds);
     return {
-      dueAt: parseTime("trial schedule", target) <= parseTime("trigger receipt", triggerReceivedAt) ? triggerReceivedAt : target,
+      dueAt: parseTime("trial schedule", target) <= parseTime("trigger receipt", triggerReceivedAt)
+        ? triggerReceivedAt
+        : target,
       held: false,
       reason: "scheduled",
     };
@@ -298,7 +350,10 @@ function incrementForStatus(result: AcquisitionWorkerResult, status: Acquisition
   else if (status === "dry-run") result.dryRun += 1;
 }
 
-function communicationReason(code: string | undefined, status: "hold" | "suppress"): AcquisitionReasonCode {
+function communicationReason(
+  code: string | undefined,
+  status: "hold" | "suppress",
+): AcquisitionReasonCode {
   if (code === "sender-not-ready") return "sender-not-ready";
   if (code === "test-recipient-not-allowlisted") return "test-recipient-not-allowlisted";
   return status === "hold" ? "communication-held" : "communication-suppressed";
@@ -309,7 +364,11 @@ export function acquisitionRetryDelaySeconds(
   providerRetryAfterSeconds: number | undefined,
   providerAttemptCount: number,
 ): number {
-  if (providerRetryAfterSeconds !== undefined && Number.isFinite(providerRetryAfterSeconds) && providerRetryAfterSeconds > 0) {
+  if (
+    providerRetryAfterSeconds !== undefined
+    && Number.isFinite(providerRetryAfterSeconds)
+    && providerRetryAfterSeconds > 0
+  ) {
     return Math.min(Math.ceil(providerRetryAfterSeconds), definition.retryPolicy.maxBackoffSeconds);
   }
   const exponential = definition.retryPolicy.baseBackoffSeconds * (2 ** Math.max(0, providerAttemptCount - 1));
@@ -344,6 +403,19 @@ async function transition(
   return updated;
 }
 
+async function holdForRecheck(
+  dependencies: AcquisitionRuntimeDependencies,
+  job: AcquisitionJob,
+  leaseToken: string,
+  reason: AcquisitionReasonCode,
+  detail: string,
+): Promise<AcquisitionJob> {
+  const current = nowIso(dependencies);
+  return transition(dependencies, job, leaseToken, "held", reason, detail, {
+    dueAt: addSeconds(current, DEFAULT_UNKNOWN_STATE_RECHECK_SECONDS),
+  });
+}
+
 async function processLeasedJob(
   dependencies: AcquisitionRuntimeDependencies,
   job: AcquisitionJob,
@@ -360,18 +432,39 @@ async function processLeasedJob(
     versionId: job.automationVersionId,
   });
   if (!definition) {
-    return transition(dependencies, job, leaseToken, "failed", "definition-version-unavailable", "Pinned automation version is unavailable.");
+    return transition(
+      dependencies,
+      job,
+      leaseToken,
+      "failed",
+      "definition-version-unavailable",
+      "Pinned automation version is unavailable.",
+    );
   }
 
   try {
     validateAcquisitionDefinition(definition);
   } catch (error) {
-    return transition(dependencies, job, leaseToken, "failed", "runtime-error", error instanceof Error ? error.message : "Invalid automation definition.");
+    return transition(
+      dependencies,
+      job,
+      leaseToken,
+      "failed",
+      "runtime-error",
+      error instanceof Error ? error.message : "Invalid automation definition.",
+    );
   }
 
   const step = definition.steps.find((candidate) => candidate.stepId === job.stepId);
   if (!step) {
-    return transition(dependencies, job, leaseToken, "failed", "definition-version-unavailable", "Pinned automation step is unavailable.");
+    return transition(
+      dependencies,
+      job,
+      leaseToken,
+      "failed",
+      "definition-version-unavailable",
+      "Pinned automation step is unavailable.",
+    );
   }
 
   const pause = await dependencies.store.getPauseState({
@@ -392,14 +485,12 @@ async function processLeasedJob(
   try {
     state = await dependencies.state.readCurrentState(stateReadInput(job));
   } catch (error) {
-    return transition(
+    return holdForRecheck(
       dependencies,
       job,
       leaseToken,
-      "held",
       "state-unknown",
       error instanceof Error ? error.message : "Current authoritative state could not be read.",
-      { dueAt: addSeconds(current, DEFAULT_UNKNOWN_STATE_RECHECK_SECONDS) },
     );
   }
 
@@ -408,16 +499,24 @@ async function processLeasedJob(
     return transition(dependencies, job, leaseToken, "cancelled", stateDecision.reason, stateDecision.detail);
   }
   if (stateDecision.disposition === "hold") {
-    return transition(dependencies, job, leaseToken, "held", stateDecision.reason, stateDecision.detail, {
-      dueAt: addSeconds(current, DEFAULT_UNKNOWN_STATE_RECHECK_SECONDS),
-    });
+    return holdForRecheck(
+      dependencies,
+      job,
+      leaseToken,
+      stateDecision.reason,
+      stateDecision.detail ?? "A required authoritative fact is unknown.",
+    );
   }
 
   if (step.schedule.kind === "before-trial-end") {
     if (state.trial.status !== "active" || !state.trial.endsAt || Number.isNaN(Date.parse(state.trial.endsAt))) {
-      return transition(dependencies, job, leaseToken, "held", "schedule-fact-unknown", "Trusted trial end time is unavailable.", {
-        dueAt: addSeconds(current, DEFAULT_UNKNOWN_STATE_RECHECK_SECONDS),
-      });
+      return holdForRecheck(
+        dependencies,
+        job,
+        leaseToken,
+        "schedule-fact-unknown",
+        "Trusted trial end time is unavailable.",
+      );
     }
     const target = subtractSeconds(state.trial.endsAt, step.schedule.offsetSeconds);
     if (parseTime("trial step", target) > parseTime("current time", current)) {
@@ -450,52 +549,54 @@ async function processLeasedJob(
   try {
     eligibility = await dependencies.email.evaluate(eligibilityInput);
   } catch (error) {
-    return transition(
+    return holdForRecheck(
       dependencies,
       job,
       leaseToken,
-      "held",
       "communication-held",
       error instanceof Error ? error.message : "Communication eligibility could not be evaluated.",
-      { dueAt: addSeconds(current, DEFAULT_UNKNOWN_STATE_RECHECK_SECONDS) },
     );
   }
 
   if (eligibility.status === "hold") {
-    return transition(dependencies, job, leaseToken, "held", communicationReason(eligibility.code, "hold"), eligibility.reason, {
-      dueAt: addSeconds(current, DEFAULT_UNKNOWN_STATE_RECHECK_SECONDS),
-    });
+    return holdForRecheck(
+      dependencies,
+      job,
+      leaseToken,
+      communicationReason(eligibility.code, "hold"),
+      eligibility.reason,
+    );
   }
   if (eligibility.status === "suppress") {
-    return transition(dependencies, job, leaseToken, "suppressed", communicationReason(eligibility.code, "suppress"), eligibility.reason);
-  }
-
-  if (job.dataMode === "preview" || job.dataMode === "demo" || job.dataMode === "development") {
-    return transition(dependencies, job, leaseToken, "dry-run", "preview-no-effects", "This execution mode never submits email to a provider.");
-  }
-
-  // Persist the ambiguity barrier before entering Track D's provider submission
-  // command. A crash after this line must never result in a blind re-send.
-  const attemptId = nextId(dependencies);
-  let markedJob: AcquisitionJob;
-  try {
-    markedJob = await dependencies.store.markProviderSubmissionStarted({
-      jobId: job.jobId,
-      leaseToken,
-      at: current,
-      attemptId,
-    });
-  } catch (error) {
     return transition(
       dependencies,
       job,
       leaseToken,
-      "held",
-      "runtime-error",
-      error instanceof Error ? error.message : "Provider submission admission could not be persisted.",
-      { dueAt: addSeconds(current, DEFAULT_UNKNOWN_STATE_RECHECK_SECONDS) },
+      "suppressed",
+      communicationReason(eligibility.code, "suppress"),
+      eligibility.reason,
     );
   }
+
+  if (job.dataMode === "preview" || job.dataMode === "demo" || job.dataMode === "development") {
+    return transition(
+      dependencies,
+      job,
+      leaseToken,
+      "dry-run",
+      "preview-no-effects",
+      "This execution mode never submits email to a provider.",
+    );
+  }
+
+  // This durable marker is the ambiguity barrier. A worker that dies after it
+  // is written must be recovered as unknown-outcome rather than re-leased.
+  const markedJob = await dependencies.store.markProviderSubmissionStarted({
+    jobId: job.jobId,
+    leaseToken,
+    at: current,
+    attemptId: nextId(dependencies),
+  });
 
   let submission;
   try {
@@ -524,22 +625,47 @@ async function processLeasedJob(
       providerRequestId: submission.providerRequestId,
     });
   }
+
   if (submission.status === "suppressed") {
-    return transition(dependencies, markedJob, leaseToken, "suppressed", "communication-suppressed", submission.reason, {
-      providerAttemptCount: markedJob.providerAttemptCount,
-    });
+    return transition(
+      dependencies,
+      markedJob,
+      leaseToken,
+      "suppressed",
+      "communication-suppressed",
+      submission.reason,
+      { providerAttemptCount: markedJob.providerAttemptCount },
+    );
   }
+
   if (submission.status === "unknown-outcome") {
-    return transition(dependencies, markedJob, leaseToken, "unknown-outcome", "provider-unknown-outcome", submission.reason, {
-      providerAttemptCount: markedJob.providerAttemptCount,
-      providerRequestId: submission.providerRequestId,
-    });
+    return transition(
+      dependencies,
+      markedJob,
+      leaseToken,
+      "unknown-outcome",
+      "provider-unknown-outcome",
+      submission.reason,
+      {
+        providerAttemptCount: markedJob.providerAttemptCount,
+        providerRequestId: submission.providerRequestId,
+      },
+    );
   }
+
   if (submission.status === "permanent-failure") {
-    return transition(dependencies, markedJob, leaseToken, "failed", "provider-permanent-failure", submission.reason, {
-      providerAttemptCount: markedJob.providerAttemptCount,
-      providerRequestId: submission.providerRequestId,
-    });
+    return transition(
+      dependencies,
+      markedJob,
+      leaseToken,
+      "failed",
+      "provider-permanent-failure",
+      submission.reason,
+      {
+        providerAttemptCount: markedJob.providerAttemptCount,
+        providerRequestId: submission.providerRequestId,
+      },
+    );
   }
 
   if (markedJob.providerAttemptCount >= definition.retryPolicy.maxAttempts) {
@@ -549,12 +675,24 @@ async function processLeasedJob(
     });
   }
 
-  const retryDelay = acquisitionRetryDelaySeconds(definition, submission.retryAfterSeconds, markedJob.providerAttemptCount);
-  return transition(dependencies, markedJob, leaseToken, "retrying", "provider-retryable-failure", submission.reason, {
-    providerAttemptCount: markedJob.providerAttemptCount,
-    providerRequestId: submission.providerRequestId,
-    dueAt: addSeconds(current, retryDelay),
-  });
+  const retryDelay = acquisitionRetryDelaySeconds(
+    definition,
+    submission.retryAfterSeconds,
+    markedJob.providerAttemptCount,
+  );
+  return transition(
+    dependencies,
+    markedJob,
+    leaseToken,
+    "retrying",
+    "provider-retryable-failure",
+    submission.reason,
+    {
+      providerAttemptCount: markedJob.providerAttemptCount,
+      providerRequestId: submission.providerRequestId,
+      dueAt: addSeconds(current, retryDelay),
+    },
+  );
 }
 
 export function createAcquisitionRuntime(dependencies: AcquisitionRuntimeDependencies) {
@@ -570,24 +708,50 @@ export function createAcquisitionRuntime(dependencies: AcquisitionRuntimeDepende
 
       for (const candidate of definitions) {
         const definition = validateAcquisitionDefinition(candidate);
+
         if (definition.organizationId !== event.organizationId || definition.triggerEventType !== event.eventType) {
-          decisions.push({ automationId: definition.automationId, versionId: definition.versionId, status: "skipped", reason: "trigger-not-approved" });
+          decisions.push({
+            automationId: definition.automationId,
+            versionId: definition.versionId,
+            status: "skipped",
+            reason: "trigger-not-approved",
+          });
           continue;
         }
         if (!definition.enabled) {
-          decisions.push({ automationId: definition.automationId, versionId: definition.versionId, status: "skipped", reason: "definition-disabled" });
+          decisions.push({
+            automationId: definition.automationId,
+            versionId: definition.versionId,
+            status: "skipped",
+            reason: "definition-disabled",
+          });
           continue;
         }
         if (!definition.allowedTriggerSources.includes(event.source)) {
-          decisions.push({ automationId: definition.automationId, versionId: definition.versionId, status: "skipped", reason: "trigger-source-not-approved" });
+          decisions.push({
+            automationId: definition.automationId,
+            versionId: definition.versionId,
+            status: "skipped",
+            reason: "trigger-source-not-approved",
+          });
           continue;
         }
         if (request.executionIntent === "projection-replay") {
-          decisions.push({ automationId: definition.automationId, versionId: definition.versionId, status: "skipped", reason: "projection-replay-no-effects" });
+          decisions.push({
+            automationId: definition.automationId,
+            versionId: definition.versionId,
+            status: "skipped",
+            reason: "projection-replay-no-effects",
+          });
           continue;
         }
         if (!subject) {
-          decisions.push({ automationId: definition.automationId, versionId: definition.versionId, status: "held", reason: "subject-unresolved" });
+          decisions.push({
+            automationId: definition.automationId,
+            versionId: definition.versionId,
+            status: "held",
+            reason: "subject-unresolved",
+          });
           continue;
         }
 
@@ -601,7 +765,11 @@ export function createAcquisitionRuntime(dependencies: AcquisitionRuntimeDepende
             automationId: definition.automationId,
             versionId: definition.versionId,
             status: "skipped",
-            reason: pause.platformPaused ? "platform-paused" : pause.organizationPaused ? "organization-paused" : "automation-paused",
+            reason: pause.platformPaused
+              ? "platform-paused"
+              : pause.organizationPaused
+                ? "organization-paused"
+                : "automation-paused",
           });
           continue;
         }
@@ -630,7 +798,12 @@ export function createAcquisitionRuntime(dependencies: AcquisitionRuntimeDepende
 
         const stateDecision = evaluateAcquisitionCurrentState(definition, currentState);
         if (stateDecision.disposition === "cancel") {
-          decisions.push({ automationId: definition.automationId, versionId: definition.versionId, status: "skipped", reason: stateDecision.reason });
+          decisions.push({
+            automationId: definition.automationId,
+            versionId: definition.versionId,
+            status: "skipped",
+            reason: stateDecision.reason,
+          });
           continue;
         }
 
@@ -655,6 +828,7 @@ export function createAcquisitionRuntime(dependencies: AcquisitionRuntimeDepende
         const createdAt = event.receivedAt;
         const expiresAt = addSeconds(createdAt, definition.expirationSeconds);
         const recheckAt = addSeconds(nowIso(dependencies), DEFAULT_UNKNOWN_STATE_RECHECK_SECONDS);
+
         const jobs: AcquisitionJob[] = definition.steps.map((step) => {
           const schedule = scheduleDueAt(step, event.receivedAt, currentState, recheckAt);
           const held = stateDecision.disposition === "hold" || schedule.held;
@@ -669,6 +843,14 @@ export function createAcquisitionRuntime(dependencies: AcquisitionRuntimeDepende
             subjectId: subject.id,
             stepId: step.stepId,
           });
+
+          // Unknown state must never cause a configured future step to run early.
+          // Trial-relative unknown schedules deliberately recheck because the
+          // not-before instant cannot yet be calculated.
+          const heldDueAt = schedule.held
+            ? schedule.dueAt
+            : laterTimestamp(schedule.dueAt, recheckAt);
+
           return {
             schemaVersion: ACQUISITION_RUNTIME_SCHEMA_VERSION,
             jobId: effectId,
@@ -683,7 +865,7 @@ export function createAcquisitionRuntime(dependencies: AcquisitionRuntimeDepende
             leadId: subject.leadId,
             dataMode: event.dataMode,
             stepId: step.stepId,
-            dueAt: held ? recheckAt : schedule.dueAt,
+            dueAt: held ? heldDueAt : schedule.dueAt,
             status: held ? "held" : "scheduled",
             providerAttemptCount: 0,
             lastExplanation: { at: createdAt, reason, detail },
@@ -721,9 +903,11 @@ export function createAcquisitionRuntime(dependencies: AcquisitionRuntimeDepende
         decisions.push({
           automationId: definition.automationId,
           versionId: definition.versionId,
-          status: result.status === "created" ? (stateDecision.disposition === "hold" ? "held" : "enrolled") : "duplicate",
+          status: result.status === "created"
+            ? stateDecision.disposition === "hold" ? "held" : "enrolled"
+            : "duplicate",
           reason: result.status === "created"
-            ? (stateDecision.disposition === "hold" ? stateDecision.reason : "scheduled")
+            ? stateDecision.disposition === "hold" ? stateDecision.reason : "scheduled"
             : "duplicate-enrollment",
           enrollmentId: result.enrollment.enrollmentId,
         });
@@ -751,39 +935,30 @@ export function createAcquisitionRuntime(dependencies: AcquisitionRuntimeDepende
           leasedAt,
           leaseExpiresAt: addSeconds(leasedAt, DEFAULT_JOB_LEASE_SECONDS),
         });
+
         if (lease.status === "unknown-outcome") {
           result.processed += 1;
           result.unknownOutcome += 1;
-          await dependencies.store.finalizeEnrollmentIfSettled({ enrollmentId: lease.job.enrollmentId, at: leasedAt });
+          await dependencies.store.finalizeEnrollmentIfSettled({
+            enrollmentId: lease.job.enrollmentId,
+            at: leasedAt,
+          });
           continue;
         }
         if (lease.status !== "leased") continue;
 
         result.leased += 1;
-        let processed: AcquisitionJob;
         try {
-          processed = await processLeasedJob(dependencies, lease.job, leaseToken);
-        } catch (error) {
-          // An unexpected failure while a provider-submission marker exists must
-          // not be converted into a retry here; lease recovery will classify the
-          // ambiguous attempt as unknown-outcome. Before that boundary, fail the
-          // leased attempt visibly rather than silently dropping it.
-          if (lease.job.providerSubmissionStartedAt) continue;
-          try {
-            processed = await transition(
-              dependencies,
-              lease.job,
-              leaseToken,
-              "failed",
-              "runtime-error",
-              error instanceof Error ? error.message : "Unhandled acquisition worker failure.",
-            );
-          } catch {
-            continue;
-          }
+          const processed = await processLeasedJob(dependencies, lease.job, leaseToken);
+          result.processed += 1;
+          incrementForStatus(result, processed.status);
+        } catch {
+          // Never guess which side of the external submission boundary an
+          // unexpected crash occurred on. Leave the lease durable. Once it
+          // expires, the store may safely re-lease work that never crossed the
+          // persisted barrier, while barrier-crossed work becomes unknown-outcome.
+          continue;
         }
-        result.processed += 1;
-        incrementForStatus(result, processed.status);
       }
 
       return result;
