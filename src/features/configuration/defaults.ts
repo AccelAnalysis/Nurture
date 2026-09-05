@@ -63,5 +63,6 @@ export function createNurtureDefaultConfiguration(organizationId: string): Organ
       homeTitle: "Nurture — Configurable application foundation",
       homeDescription: "Nurture is a configurable application foundation that supplies the lifecycle around a pluggable Experience.",
     },
+    extensions: {},
   };
 }
