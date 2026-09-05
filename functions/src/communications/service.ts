@@ -41,9 +41,9 @@ export interface DispatchEmailCommand {
 }
 
 export interface DispatchEmailPrerequisites {
-  /** Current address resolved by trusted C/E code. It is used in memory, not persisted in MessageIntent. */
+  /** Current address resolved by trusted C/D composition. It is used in memory, not persisted in MessageIntent. */
   recipientEmail?: string;
-  /** Current C-owned purpose/channel fact, read immediately before dispatch admission. */
+  /** Current C-owned purpose/channel fact, interpreted by D immediately before dispatch admission. */
   consent: EmailConsentSnapshot;
   testAllowlisted?: boolean;
 }
@@ -198,6 +198,7 @@ export async function dispatchEmail(
     completedAt,
     outcome: ambiguous ? "unknown" : result.error.retryable ? "retryable-failure" : "terminal-failure",
     ...(result.meta.providerRequestId ? { providerRequestId: result.meta.providerRequestId } : {}),
+    ...(result.error.retryAfterMs ? { retryAfterMs: result.error.retryAfterMs } : {}),
     reason: `${result.error.code}: ${result.error.message}`,
   };
   record = await updateMessageRecord(command.organizationId, record.intent.messageId, {
