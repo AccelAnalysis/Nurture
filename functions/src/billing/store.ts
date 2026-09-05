@@ -65,23 +65,22 @@ export async function assertOrganizationCapability(organizationId: string, userI
   }
 }
 
-export async function resolveCustomerId(organizationId: string, identityId: string) {
-  // Track C owns Customer/Profile bootstrap. Billing never equates Firebase UID
-  // with Customer ID; it resolves exactly one organization-scoped Customer.
-  const result = await organizationRef(organizationId)
-    .collection("customers")
-    .where("identityId", "==", identityId)
-    .limit(2)
-    .get();
-  if (result.size !== 1) {
-    throw new HttpsError(
-      "failed-precondition",
-      result.empty
-        ? "A stable organization Customer profile must exist before checkout."
-        : "Multiple Customer profiles are linked to this identity; checkout is blocked until the scope is repaired.",
-    );
+export async function resolveCustomerId(_organizationId: string, identityId: string) {
+  // Track C owns Customer/Profile bootstrap and persists one identity-owned
+  // profile at identityCustomers/{identityUid}. Track D consumes the stored
+  // stable customerId and never derives or creates it from the Firebase UID.
+  const profile = await db.collection("identityCustomers").doc(identityId).get();
+  if (!profile.exists) {
+    throw new HttpsError("failed-precondition", "A stable Nurture Customer profile must exist before checkout.");
   }
-  return result.docs[0].id;
+  const data = profile.data() ?? {};
+  const storedIdentityId: unknown = data.identityId;
+  const customerId: unknown = data.customerId;
+  const status: unknown = data.status;
+  if (storedIdentityId !== identityId || status !== "active" || typeof customerId !== "string" || !customerId.trim()) {
+    throw new HttpsError("failed-precondition", "The Nurture Customer profile is invalid or does not match the authenticated identity.");
+  }
+  return customerId.trim();
 }
 
 export async function getOfferRecord(organizationId: string, offerId: string) {
