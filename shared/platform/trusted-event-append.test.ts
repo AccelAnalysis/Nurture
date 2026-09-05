@@ -10,6 +10,9 @@ import {
   TrustedEventAppendError,
   lifecycleEventDedupeKey,
   type DurableLifecycleEventStore,
+  type LifecycleEventAdmissionDecision,
+  type LifecycleEventAdmissionInput,
+  type LifecycleEventAdmissionPort,
   type LifecycleEventAppendResult,
 } from "./trusted-event-append";
 
@@ -33,6 +36,7 @@ class BindingPort implements OrganizationCustomerBindingPort {
 
 class EventStore implements DurableLifecycleEventStore {
   events = new Map<string, LifecycleEventEnvelope>();
+
   async appendIfAbsent(event: LifecycleEventEnvelope): Promise<LifecycleEventAppendResult> {
     const key = lifecycleEventDedupeKey(event);
     const existing = this.events.get(key);
@@ -42,13 +46,26 @@ class EventStore implements DurableLifecycleEventStore {
   }
 }
 
+class AdmissionPort implements LifecycleEventAdmissionPort {
+  inputs: LifecycleEventAdmissionInput[] = [];
+  decision: LifecycleEventAdmissionDecision = { status: "allowed" };
+
+  async admit(input: LifecycleEventAdmissionInput): Promise<LifecycleEventAdmissionDecision> {
+    this.inputs.push(structuredClone(input));
+    return structuredClone(this.decision);
+  }
+}
+
 function appender() {
   const store = new EventStore();
+  const admission = new AdmissionPort();
   return {
     store,
+    admission,
     append: new SecureLifecycleEventAppender(
       new BindingPort(),
       store,
+      admission,
       () => "2026-09-05T13:00:01.000Z",
     ),
   };
@@ -86,7 +103,40 @@ describe("canonical trusted lifecycle append", () => {
       subjectId: "customer-1",
       source: "browser",
     });
+    expect(fx.admission.inputs[0]).toMatchObject({
+      organizationId: "org-a",
+      customerId: "customer-1",
+      identityId: "identity-1",
+      source: "browser",
+      eventType: "experience.started",
+      dataMode: "test",
+    });
     expect(fx.store.events.size).toBe(1);
+  });
+
+  it("fails closed when the abuse admission boundary rejects the event", async () => {
+    const fx = appender();
+    fx.admission.decision = {
+      status: "denied",
+      reason: "subject event rate exceeded",
+      retryAfterSeconds: 60,
+    };
+    const submission = createLifecycleEventSubmission("experience.started", {}, {
+      eventId: "event-rate-limited",
+      occurredAt: "2026-09-05T13:00:00.000Z",
+      correlationId: "corr-rate-limited",
+      idempotencyKey: "idempotency-rate-limited",
+      dataMode: "test",
+    });
+    await expect(fx.append.appendAuthenticatedBrowserSubmission({
+      submission,
+      organizationId: "org-a",
+      identityId: "identity-1",
+    })).rejects.toMatchObject({
+      code: "rate-limited",
+      retryAfterSeconds: 60,
+    } satisfies Partial<TrustedEventAppendError>);
+    expect(fx.store.events.size).toBe(0);
   });
 
   it("rejects a browser attempt to manufacture a subscription fact", async () => {
@@ -213,7 +263,11 @@ describe("canonical trusted lifecycle append", () => {
 
   it("keeps idempotency scope isolated by tenant and execution mode", () => {
     const common = { idempotencyKey: "same", organizationId: "org-a", dataMode: "test" as const };
-    expect(lifecycleEventDedupeKey(common)).not.toBe(lifecycleEventDedupeKey({ ...common, organizationId: "org-b" }));
-    expect(lifecycleEventDedupeKey(common)).not.toBe(lifecycleEventDedupeKey({ ...common, dataMode: "live" }));
+    expect(lifecycleEventDedupeKey(common)).not.toBe(
+      lifecycleEventDedupeKey({ ...common, organizationId: "org-b" }),
+    );
+    expect(lifecycleEventDedupeKey(common)).not.toBe(
+      lifecycleEventDedupeKey({ ...common, dataMode: "live" }),
+    );
   });
 });
