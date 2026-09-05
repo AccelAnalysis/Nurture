@@ -29,13 +29,24 @@ export function calculateAnnualPricing(
   };
 }
 
-export function formatMinorAmount(unitAmountMinor: number, currency: string, locale?: string) {
-  assertMinorAmount(unitAmountMinor, "unitAmountMinor");
-  return new Intl.NumberFormat(locale, {
+export function currencyMinorUnitExponent(currency: string, locale?: string) {
+  const formatter = new Intl.NumberFormat(locale, {
     style: "currency",
     currency: currency.toUpperCase(),
-    maximumFractionDigits: 2,
-  }).format(unitAmountMinor / 100);
+  });
+  // ECMA-402's currency formatter uses the ISO 4217 minor-unit digits as the
+  // default fraction digits (for example JPY=0, USD=2, KWD=3).
+  return formatter.resolvedOptions().minimumFractionDigits;
+}
+
+export function formatMinorAmount(unitAmountMinor: number, currency: string, locale?: string) {
+  assertMinorAmount(unitAmountMinor, "unitAmountMinor");
+  const formatter = new Intl.NumberFormat(locale, {
+    style: "currency",
+    currency: currency.toUpperCase(),
+  });
+  const exponent = formatter.resolvedOptions().minimumFractionDigits;
+  return formatter.format(unitAmountMinor / (10 ** exponent));
 }
 
 export function getActivePrice(offer: CommercialOffer, interval: BillingInterval): OfferPrice | null {
