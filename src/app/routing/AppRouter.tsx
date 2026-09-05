@@ -3,6 +3,7 @@ import { OrganizationShell, ParticipantShell, PlatformAdminShell, PublicShell } 
 import { EmptyState, LoadingState } from "../../components/ui";
 import { useOrganization } from "../../context/OrganizationContext";
 import { usePlatform } from "../../context/PlatformContext";
+import { AnalyticsWorkspace } from "../../features/analytics/workspace/AnalyticsWorkspace";
 import { OrganizationOffersPage, ParticipantBillingPage, ParticipantOffersPage, PublicOffersPage, PublicOfferDetail } from "../../features/billing/pages";
 import { CommunicationsAdminPage } from "../../features/communications";
 import { BrandSiteAdminPage } from "../../features/configuration/BrandSiteAdminPage";
@@ -116,6 +117,7 @@ function OrganizationLifecycleContent({ organizationId, section, detail }: { org
   if (section === "communications") return <CommunicationsAdminPage organizationId={organizationId} />;
   if (section === "surveys") return <OrganizationFeedbackAdminSurface organizationId={organizationId} kind="survey" />;
   if (section === "referrals") return <OrganizationFeedbackAdminSurface organizationId={organizationId} kind="program" />;
+  if (section === "analytics") return <AnalyticsWorkspace key={organizationId} organizationId={organizationId} />;
   return null;
 }
 

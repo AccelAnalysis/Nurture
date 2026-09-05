@@ -1,0 +1,43 @@
+name: Release 5 analytics verification
+
+on:
+  pull_request:
+    paths:
+      - 'shared/analytics/**'
+      - 'shared/platform/**'
+      - 'shared/billing/**'
+      - 'functions/src/analytics/**'
+      - 'src/features/analytics/**'
+      - 'src/app/routing/AppRouter.tsx'
+      - 'tests/release5/**'
+      - 'scripts/verify-release-5*'
+      - 'tsconfig.release-5.json'
+      - '.github/workflows/release-5.yml'
+  push:
+    branches: ['release-5/analytics-integration']
+
+permissions:
+  contents: read
+
+jobs:
+  analytics:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm install --no-audit --no-fund
+      - run: npx tsc -p tsconfig.release-5.json
+      - run: node scripts/verify-release-5.mjs && node scripts/verify-release-5-hardening.mjs
+      - run: npm run typecheck && npm test && npm run build
+      - run: npm install --prefix functions --no-audit --no-fund
+      - run: npm --prefix functions run typecheck
+      - run: npx playwright install --with-deps chromium
+      - run: node scripts/verify-release-5-browser.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-5-browser-evidence
+          path: test-results/release-5
+          if-no-files-found: ignore

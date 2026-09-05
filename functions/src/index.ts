@@ -84,3 +84,6 @@ export {
   r4SetFeedbackRuntimeControl,
 } from "./feedback/control.js";
 export { r4QualifyReferralOnSubscription } from "./feedback/triggers.js";
+
+// Release 5 analytics callables remain fail-closed until the accepted R4 source mappings are reconciled.
+export { queryOrganizationAnalytics, rebuildOrganizationAnalytics } from "./analytics/endpoints.js";
