@@ -8,6 +8,7 @@ import {
   isNurtureEventType,
   isSourceAllowedForEvent,
   validateEventPayload,
+  validateLifecycleEventEnvelope,
 } from "../.tmp/analytics/core.js";
 
 const id = () => "evt-001";
@@ -34,6 +35,35 @@ const boundPageView = bindLifecycleEvent(pageView, {
 assert.equal(boundPageView.organizationId, "org-1");
 assert.equal(boundPageView.subjectKind, "visitor");
 assert.equal(boundPageView.source, "browser");
+
+const identitySignal = createLifecycleEventSubmission(
+  "registration.completed",
+  { method: "password" },
+  {
+    eventId: "event-track-c",
+    occurredAt: now(),
+    correlationId: "corr-track-c",
+    idempotencyKey: "event-track-c",
+    identityIdHint: "firebase-uid-hint",
+    customerIdHint: "customer-hint",
+    subjectHint: { kind: "customer", id: "customer-hint" },
+    dataMode: "development",
+  },
+);
+assert.equal(identitySignal.eventType, "registration.completed");
+assert.equal(identitySignal.identityIdHint, "firebase-uid-hint");
+assert.equal(identitySignal.customerIdHint, "customer-hint");
+assert.equal(isSourceAllowedForEvent(identitySignal.eventType, "browser"), false);
+const boundIdentitySignal = bindLifecycleEvent(identitySignal, {
+  organizationId: "verified-org",
+  source: "domain_action",
+  identityId: "verified-identity",
+  customerId: "verified-customer",
+  subject: { kind: "customer", id: "verified-customer" },
+}, { now });
+assert.equal(boundIdentitySignal.identityId, "verified-identity");
+assert.equal(boundIdentitySignal.customerId, "verified-customer");
+assert.notEqual(boundIdentitySignal.customerId, identitySignal.customerIdHint);
 
 const moduleEvent = createLifecycleEventSubmission(
   "experience.reference-assessment.completed",
@@ -78,6 +108,36 @@ const trustedCheckout = bindLifecycleEvent(checkoutCompleted, {
 }, { now });
 assert.equal(trustedCheckout.source, "provider_webhook");
 assert.equal(trustedCheckout.customerId, "customer-1");
+
+const trackDSubscriptionEvent = {
+  eventId: "billing-event-1",
+  eventType: "subscription.started",
+  schemaVersion: 1,
+  organizationId: "org-1",
+  subjectId: "sub-1",
+  subjectKind: "subscription",
+  customerId: "customer-1",
+  offerId: "offer-primary",
+  occurredAt: now(),
+  receivedAt: now(),
+  source: "provider_webhook",
+  correlationId: "stripe-event-1",
+  idempotencyKey: "stripe-event-1",
+  dataMode: "test",
+  payload: { provider: "stripe", status: "active" },
+};
+const validatedTrackDEvent = validateLifecycleEventEnvelope(trackDSubscriptionEvent);
+assert.equal(validatedTrackDEvent.eventType, "subscription.started");
+assert.equal(validatedTrackDEvent.dataMode, "test");
+assert.equal(validatedTrackDEvent.source, "provider_webhook");
+assert.throws(
+  () => validateLifecycleEventEnvelope({ ...trackDSubscriptionEvent, eventType: "checkout.completed", source: "browser" }),
+  AnalyticsContractError,
+);
+assert.throws(
+  () => validateLifecycleEventEnvelope({ ...trackDSubscriptionEvent, subjectKind: undefined }),
+  AnalyticsContractError,
+);
 
 const published = createLifecycleEventSubmission(
   "configuration.published",
