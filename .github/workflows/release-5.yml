@@ -7,11 +7,16 @@ on:
       - 'shared/platform/**'
       - 'shared/billing/**'
       - 'functions/src/analytics/**'
+      - 'functions/src/billing/**'
+      - 'functions/src/feedback/**'
       - 'src/features/analytics/**'
       - 'src/app/routing/AppRouter.tsx'
       - 'tests/release5/**'
       - 'scripts/verify-release-5*'
+      - 'scripts/verify-release4-integration.mjs'
       - 'tsconfig.release-5.json'
+      - '.github/workflows/firebase-backend.yml'
+      - '.github/workflows/firebase-hosting.yml'
       - '.github/workflows/release-5.yml'
   push:
     branches: ['release-5/analytics-integration']
@@ -30,9 +35,9 @@ jobs:
       - run: npm install --no-audit --no-fund
       - run: npx tsc -p tsconfig.release-5.json
       - run: node scripts/verify-release-5.mjs && node scripts/verify-release-5-hardening.mjs
-      - run: npm run typecheck && npm test && npm run build
+      - run: npm run typecheck && npm test && npm run test:release3 && npm run test:release4 && npm run build
       - run: npm install --prefix functions --no-audit --no-fund
-      - run: npm --prefix functions run typecheck
+      - run: npm --prefix functions run typecheck && npm --prefix functions test
       - run: npx playwright install --with-deps chromium
       - run: node scripts/verify-release-5-browser.mjs
       - uses: actions/upload-artifact@v4
