@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { FieldValue } from "firebase-admin/firestore";
 import { HttpsError } from "firebase-functions/v2/https";
 import type {
@@ -7,11 +7,12 @@ import type {
   SubscriptionSnapshot,
 } from "../../../shared/billing/contracts.js";
 import { db } from "../firebase.js";
-import type {
-  BillingCustomerMapping,
-  OfferRecord,
-  ProviderEventRecord,
-  StoredSubscription,
+import {
+  permanentBillingEvent,
+  type BillingCustomerMapping,
+  type OfferRecord,
+  type ProviderEventRecord,
+  type StoredSubscription,
 } from "./model.js";
 
 export type OrganizationCapability = "offers.view" | "offers.manage" | "offers.publish" | "billing.view" | "billing.manage";
@@ -36,6 +37,10 @@ export function offerRef(organizationId: string, offerId: string) {
   return organizationRef(organizationId).collection("offers").doc(offerId);
 }
 
+export function offerVersionRef(organizationId: string, offerId: string, version: number) {
+  return offerRef(organizationId, offerId).collection("versions").doc(String(version));
+}
+
 export function subscriptionRef(organizationId: string, providerSubscriptionId: string) {
   return organizationRef(organizationId).collection("subscriptions").doc(providerSubscriptionId);
 }
@@ -46,6 +51,32 @@ export function billingCustomerRef(organizationId: string, customerId: string) {
 
 export function providerEventRef(eventId: string) {
   return db.collection("_billingProviderEvents").doc(eventId);
+}
+
+function auditEventRef(organizationId: string, id = randomUUID()) {
+  return organizationRef(organizationId).collection("auditEvents").doc(id);
+}
+
+function auditEventData(input: {
+  id: string;
+  organizationId: string;
+  actorUserId: string;
+  action: string;
+  targetType: string;
+  targetId?: string;
+  context?: Record<string, string | number | boolean | null>;
+  occurredAt: string;
+}) {
+  return {
+    id: input.id,
+    organizationId: input.organizationId,
+    actorUserId: input.actorUserId,
+    action: input.action,
+    targetType: input.targetType,
+    ...(input.targetId ? { targetId: input.targetId } : {}),
+    occurredAt: input.occurredAt,
+    ...(input.context ? { context: input.context } : {}),
+  };
 }
 
 export async function assertOrganizationCapability(organizationId: string, userId: string, capability: OrganizationCapability) {
@@ -65,22 +96,25 @@ export async function assertOrganizationCapability(organizationId: string, userI
   }
 }
 
-export async function resolveCustomerId(_organizationId: string, identityId: string) {
-  // Track C owns Customer/Profile bootstrap and persists one identity-owned
-  // profile at identityCustomers/{identityUid}. Track D consumes the stored
-  // stable customerId and never derives or creates it from the Firebase UID.
-  const profile = await db.collection("identityCustomers").doc(identityId).get();
-  if (!profile.exists) {
-    throw new HttpsError("failed-precondition", "A stable Nurture Customer profile must exist before checkout.");
+export async function resolveCustomerId(organizationId: string, identityId: string) {
+  // Track C owns global account/profile bootstrap and the trusted tenant-Customer
+  // bootstrap/link operation. Billing requires exactly one organization Customer
+  // linked to the authenticated identity; the global identityCustomers profile is
+  // deliberately not accepted as an organization Customer.
+  const result = await organizationRef(organizationId)
+    .collection("customers")
+    .where("identityId", "==", identityId)
+    .limit(2)
+    .get();
+  if (result.size !== 1) {
+    throw new HttpsError(
+      "failed-precondition",
+      result.empty
+        ? "A trusted organization Customer must be linked to this identity before checkout."
+        : "Multiple organization Customers are linked to this identity; checkout is blocked until the scope is repaired.",
+    );
   }
-  const data = profile.data() ?? {};
-  const storedIdentityId: unknown = data.identityId;
-  const customerId: unknown = data.customerId;
-  const status: unknown = data.status;
-  if (storedIdentityId !== identityId || status !== "active" || typeof customerId !== "string" || !customerId.trim()) {
-    throw new HttpsError("failed-precondition", "The Nurture Customer profile is invalid or does not match the authenticated identity.");
-  }
-  return customerId.trim();
+  return result.docs[0].id;
 }
 
 export async function getOfferRecord(organizationId: string, offerId: string) {
@@ -91,6 +125,48 @@ export async function getOfferRecord(organizationId: string, offerId: string) {
 export async function listOfferRecords(organizationId: string) {
   const snapshot = await organizationRef(organizationId).collection("offers").get();
   return snapshot.docs.map((item) => item.data() as OfferRecord);
+}
+
+function priceMappedByProvider(offer: CommercialOffer, providerPriceId: string) {
+  return offer.prices.some((price) => price.providerPriceId === providerPriceId);
+}
+
+export async function resolveOfferVersionForSubscription(input: {
+  organizationId: string;
+  offerId: string;
+  providerPriceId: string;
+  subscriptionCreated: number;
+  metadataVersion?: string;
+}) {
+  const record = await getOfferRecord(input.organizationId, input.offerId);
+  if (!record) return permanentBillingEvent("Subscription Offer does not exist in Nurture.");
+
+  if (input.metadataVersion) {
+    const version = Number(input.metadataVersion);
+    if (!Number.isInteger(version) || version < 1) return permanentBillingEvent("Stripe subscription Offer version metadata is invalid.");
+    const versionSnapshot = await offerVersionRef(input.organizationId, input.offerId, version).get();
+    const versionOffer = versionSnapshot.exists ? versionSnapshot.data() as CommercialOffer : undefined;
+    const candidate = versionOffer ?? (record.published?.version === version ? record.published : undefined);
+    if (!candidate || !priceMappedByProvider(candidate, input.providerPriceId)) {
+      return permanentBillingEvent("Stripe subscription Price does not match its recorded immutable Nurture Offer version.");
+    }
+    return candidate;
+  }
+
+  // Compatibility for subscriptions created before Offer-version metadata was
+  // introduced: locate the immutable version that mapped the provider Price at
+  // the time the subscription was created. Current published state is included
+  // as a migration fallback if no version document was written yet.
+  const versionSnapshots = await offerRef(input.organizationId, input.offerId).collection("versions").get();
+  const candidates = versionSnapshots.docs.map((item) => item.data() as CommercialOffer);
+  if (record.published && !candidates.some((item) => item.version === record.published?.version)) candidates.push(record.published);
+  const createdMs = input.subscriptionCreated * 1000;
+  const matching = candidates
+    .filter((offer) => priceMappedByProvider(offer, input.providerPriceId))
+    .filter((offer) => !offer.publishedAt || Date.parse(offer.publishedAt) <= createdMs)
+    .sort((a, b) => b.version - a.version);
+  if (!matching.length) return permanentBillingEvent("Stripe subscription Price is not mapped to an eligible immutable Nurture Offer version.");
+  return matching[0];
 }
 
 export async function getBillingCustomerMapping(organizationId: string, customerId: string) {
@@ -120,15 +196,111 @@ export async function writeAuditEvent(input: {
 }) {
   const id = randomUUID();
   const occurredAt = new Date().toISOString();
-  await organizationRef(input.organizationId).collection("auditEvents").doc(id).set({
-    id,
-    organizationId: input.organizationId,
-    actorUserId: input.actorUserId,
-    action: input.action,
-    targetType: input.targetType,
-    ...(input.targetId ? { targetId: input.targetId } : {}),
-    occurredAt,
-    ...(input.context ? { context: input.context } : {}),
+  await auditEventRef(input.organizationId, id).set(auditEventData({ ...input, id, occurredAt }));
+}
+
+export async function saveOfferDraftWithAudit(input: {
+  organizationId: string;
+  offer: CommercialOffer;
+  actorUserId: string;
+}) {
+  const ref = offerRef(input.organizationId, input.offer.id);
+  const auditId = randomUUID();
+  const auditRef = auditEventRef(input.organizationId, auditId);
+  const now = new Date().toISOString();
+  await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(ref);
+    const existing = snapshot.exists ? snapshot.data() as OfferRecord : null;
+    const record: OfferRecord = {
+      draft: input.offer,
+      ...(existing?.published ? { published: existing.published } : {}),
+      updatedAt: now,
+    };
+    transaction.set(ref, record, { merge: false });
+    transaction.create(auditRef, auditEventData({
+      id: auditId,
+      organizationId: input.organizationId,
+      actorUserId: input.actorUserId,
+      action: "billing.offer.draft_saved",
+      targetType: "offer",
+      targetId: input.offer.id,
+      occurredAt: now,
+      context: { version: input.offer.version, hasPublishedVersion: Boolean(existing?.published) },
+    }));
+  });
+}
+
+export async function publishOfferWithAudit(input: {
+  organizationId: string;
+  offerId: string;
+  expectedDraftUpdatedAt?: string;
+  actorUserId: string;
+}) {
+  const ref = offerRef(input.organizationId, input.offerId);
+  const auditId = randomUUID();
+  const auditRef = auditEventRef(input.organizationId, auditId);
+  return db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(ref);
+    if (!snapshot.exists) throw new HttpsError("not-found", "Offer not found.");
+    const record = snapshot.data() as OfferRecord;
+    if (input.expectedDraftUpdatedAt && record.draft.updatedAt !== input.expectedDraftUpdatedAt) {
+      throw new HttpsError("aborted", "The Offer draft changed during publication. Review the latest draft and publish again.");
+    }
+    if (record.draft.status === "published" && record.published?.updatedAt === record.draft.updatedAt) return record.published;
+    const now = new Date().toISOString();
+    const version = (record.published?.version ?? 0) + 1;
+    const published: CommercialOffer = {
+      ...record.draft,
+      status: "published",
+      version,
+      publishedAt: now,
+      updatedAt: now,
+    };
+    transaction.create(offerVersionRef(input.organizationId, input.offerId, version), published);
+    transaction.set(ref, { draft: published, published, updatedAt: now } satisfies OfferRecord, { merge: false });
+    transaction.create(auditRef, auditEventData({
+      id: auditId,
+      organizationId: input.organizationId,
+      actorUserId: input.actorUserId,
+      action: "billing.offer.published",
+      targetType: "offer",
+      targetId: input.offerId,
+      occurredAt: now,
+      context: { version },
+    }));
+    return published;
+  });
+}
+
+export async function seedOfferWithAudit(input: {
+  organizationId: string;
+  template: CommercialOffer;
+  actorUserId: string;
+}) {
+  const ref = offerRef(input.organizationId, input.template.id);
+  const auditId = randomUUID();
+  const auditRef = auditEventRef(input.organizationId, auditId);
+  const now = new Date().toISOString();
+  return db.runTransaction(async (transaction) => {
+    if ((await transaction.get(ref)).exists) return false;
+    const base = { ...input.template, organizationId: input.organizationId, updatedAt: now };
+    const published = input.template.status === "published"
+      ? { ...base, status: "published" as const, publishedAt: now }
+      : undefined;
+    const draft = published ?? { ...base, status: "draft" as const };
+    transaction.create(ref, { draft, ...(published ? { published } : {}), updatedAt: now } satisfies OfferRecord);
+    if (published) transaction.create(offerVersionRef(input.organizationId, input.template.id, published.version), published);
+    transaction.create(auditRef, auditEventData({
+      id: auditId,
+      organizationId: input.organizationId,
+      actorUserId: input.actorUserId,
+      action: "billing.offer.default_seeded",
+      targetType: "offer",
+      targetId: input.template.id,
+      occurredAt: now,
+      context: { version: draft.version, published: Boolean(published) },
+    }));
+    return true;
   });
 }
 
@@ -145,24 +317,29 @@ export async function writeLifecycleEvent(input: {
   idempotencyKey: string;
   payload?: Record<string, string | number | boolean | null>;
 }) {
-  const eventId = randomUUID();
+  const digest = createHash("sha256").update(`${input.organizationId}:${input.idempotencyKey}`).digest("hex");
+  const eventId = `idem-${digest}`;
   const receivedAt = new Date().toISOString();
-  await organizationRef(input.organizationId).collection("lifecycleEvents").doc(eventId).set({
-    eventId,
-    eventType: input.eventType,
-    schemaVersion: 1,
-    organizationId: input.organizationId,
-    subjectId: input.subjectId,
-    subjectKind: input.subjectKind,
-    ...(input.customerId ? { customerId: input.customerId } : {}),
-    ...(input.offerId ? { offerId: input.offerId } : {}),
-    occurredAt: input.occurredAt ?? receivedAt,
-    receivedAt,
-    source: input.source,
-    correlationId: input.correlationId,
-    idempotencyKey: input.idempotencyKey,
-    dataMode: "test",
-    payload: input.payload ?? {},
+  const ref = organizationRef(input.organizationId).collection("lifecycleEvents").doc(eventId);
+  await db.runTransaction(async (transaction) => {
+    if ((await transaction.get(ref)).exists) return;
+    transaction.create(ref, {
+      eventId,
+      eventType: input.eventType,
+      schemaVersion: 1,
+      organizationId: input.organizationId,
+      subjectId: input.subjectId,
+      subjectKind: input.subjectKind,
+      ...(input.customerId ? { customerId: input.customerId } : {}),
+      ...(input.offerId ? { offerId: input.offerId } : {}),
+      occurredAt: input.occurredAt ?? receivedAt,
+      receivedAt,
+      source: input.source,
+      correlationId: input.correlationId,
+      idempotencyKey: input.idempotencyKey,
+      dataMode: "test",
+      payload: input.payload ?? {},
+    });
   });
 }
 
@@ -190,7 +367,9 @@ export async function recordCheckoutSession(input: {
   organizationId: string;
   customerId: string;
   offerId: string;
+  offerVersion: number;
   priceId: string;
+  providerPriceId: string;
   attemptId: string;
   providerSessionId: string;
 }) {
