@@ -99,10 +99,12 @@ export async function getCurrentSubscriptionForCustomer(organizationId: string, 
   const result = await organizationRef(organizationId)
     .collection("subscriptions")
     .where("customerId", "==", customerId)
-    .orderBy("trustedAt", "desc")
-    .limit(1)
+    .limit(50)
     .get();
-  return result.empty ? null : result.docs[0].data() as StoredSubscription;
+  if (result.empty) return null;
+  return result.docs
+    .map((item) => item.data() as StoredSubscription)
+    .sort((a, b) => Date.parse(b.trustedAt) - Date.parse(a.trustedAt))[0] ?? null;
 }
 
 export async function writeAuditEvent(input: {
