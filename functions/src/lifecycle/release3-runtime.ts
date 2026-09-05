@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { onDocumentCreated } from "firebase-functions/v2/firestore";
 import { onSchedule } from "firebase-functions/v2/scheduler";
-import type { AutomationDefinitionV3, InAppTreatmentIntent } from "../../../shared/release3/contracts.js";
+import type { AutomationDefinitionV3, InAppTreatmentIntent, SegmentFact } from "../../../shared/release3/contracts.js";
 import { planEffects } from "../../../shared/release3/runtime.js";
 import {
   applyRetentionEvent,
@@ -157,14 +157,14 @@ async function executeRun(snapshot: FirebaseFirestore.QueryDocumentSnapshot) {
   }
 
   const projection = projectionSnapshot.data() as RetentionProjectionState;
-  const facts = [
-    { key: "subscription.state" as const, value: projection.commercial.subscriptionState, observedAt: now, provenance: projection.commercial.provenance ?? { source: "projection" as const, occurredAt: now, schemaVersion: 1 } },
-    { key: "payment.health" as const, value: projection.commercial.paymentHealth, observedAt: now, provenance: projection.commercial.provenance ?? { source: "projection" as const, occurredAt: now, schemaVersion: 1 } },
-    { key: "cancellation.status" as const, value: projection.commercial.cancellation.status, observedAt: now, provenance: projection.commercial.cancellation.provenance ?? { source: "projection" as const, occurredAt: now, schemaVersion: 1 } },
-    { key: "engagement.state" as const, value: projection.engagement.state, observedAt: now, provenance: projection.engagement.provenance ?? { source: "projection" as const, occurredAt: now, schemaVersion: 1 } },
+  const facts: SegmentFact[] = [
+    { key: "subscription.state", value: projection.commercial.subscriptionState, observedAt: now, provenance: projection.commercial.provenance ?? { source: "projection", occurredAt: now, schemaVersion: 1 } },
+    { key: "payment.health", value: projection.commercial.paymentHealth, observedAt: now, provenance: projection.commercial.provenance ?? { source: "projection", occurredAt: now, schemaVersion: 1 } },
+    { key: "cancellation.status", value: projection.commercial.cancellation.status, observedAt: now, provenance: projection.commercial.cancellation.provenance ?? { source: "projection", occurredAt: now, schemaVersion: 1 } },
+    { key: "engagement.state", value: projection.engagement.state, observedAt: now, provenance: projection.engagement.provenance ?? { source: "projection", occurredAt: now, schemaVersion: 1 } },
   ];
-  if (projection.commercial.offerId) facts.push({ key: "subscription.offer_id" as const, value: projection.commercial.offerId, observedAt: now, provenance: projection.commercial.provenance ?? { source: "projection" as const, occurredAt: now, schemaVersion: 1 } });
-  if (projection.lastMilestone) facts.push({ key: "experience.milestone" as const, value: projection.lastMilestone, observedAt: now, provenance: projection.engagement.provenance ?? { source: "projection" as const, occurredAt: now, schemaVersion: 1 } });
+  if (projection.commercial.offerId) facts.push({ key: "subscription.offer_id", value: projection.commercial.offerId, observedAt: now, provenance: projection.commercial.provenance ?? { source: "projection", occurredAt: now, schemaVersion: 1 } });
+  if (projection.lastMilestone) facts.push({ key: "experience.milestone", value: projection.lastMilestone, observedAt: now, provenance: projection.engagement.provenance ?? { source: "projection", occurredAt: now, schemaVersion: 1 } });
 
   const effects = planEffects({ definition, customerId: run.customerId, triggerId: run.triggerId, facts });
   if (effects.length === 0) {
