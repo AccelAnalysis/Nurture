@@ -119,16 +119,22 @@ function assertIntegerRange(label: string, value: number, min: number, max: numb
 function assertContainsAll<T extends string>(label: string, actual: readonly T[], required: readonly T[]): void {
   const actualSet = new Set(actual);
   const missing = required.filter((item) => !actualSet.has(item));
-  if (missing.length) throw new AcquisitionDefinitionError(`${label} is missing required values: ${missing.join(", ")}.`);
+  if (missing.length) {
+    throw new AcquisitionDefinitionError(`${label} is missing required values: ${missing.join(", ")}.`);
+  }
 }
 
 function assertSubset<T extends string>(label: string, actual: readonly T[], allowed: readonly T[]): void {
   const allowedSet = new Set(allowed);
   const rejected = actual.filter((item) => !allowedSet.has(item));
-  if (rejected.length) throw new AcquisitionDefinitionError(`${label} contains unsupported values: ${rejected.join(", ")}.`);
+  if (rejected.length) {
+    throw new AcquisitionDefinitionError(`${label} contains unsupported values: ${rejected.join(", ")}.`);
+  }
 }
 
-export function validateAcquisitionDefinition(definition: AcquisitionAutomationDefinition): AcquisitionAutomationDefinition {
+export function validateAcquisitionDefinition(
+  definition: AcquisitionAutomationDefinition,
+): AcquisitionAutomationDefinition {
   if (definition.schemaVersion !== ACQUISITION_AUTOMATION_SCHEMA_VERSION) {
     throw new AcquisitionDefinitionError(`Unsupported automation schema version: ${String(definition.schemaVersion)}.`);
   }
@@ -136,7 +142,9 @@ export function validateAcquisitionDefinition(definition: AcquisitionAutomationD
   nonEmpty("organizationId", definition.organizationId);
   nonEmpty("versionId", definition.versionId);
   const descriptor = ACQUISITION_CATALOG[definition.automationId];
-  if (!descriptor) throw new AcquisitionDefinitionError(`Unsupported Release 2 automation: ${String(definition.automationId)}.`);
+  if (!descriptor) {
+    throw new AcquisitionDefinitionError(`Unsupported Release 2 automation: ${String(definition.automationId)}.`);
+  }
   if (definition.triggerEventType !== descriptor.triggerEventType) {
     throw new AcquisitionDefinitionError(`${definition.automationId} must use trigger ${descriptor.triggerEventType}.`);
   }
@@ -148,7 +156,9 @@ export function validateAcquisitionDefinition(definition: AcquisitionAutomationD
   assertSubset("allowedTriggerSources", definition.allowedTriggerSources, descriptor.allowedTriggerSources);
   for (const source of definition.allowedTriggerSources) {
     if (!isSourceAllowedForEvent(definition.triggerEventType, source)) {
-      throw new AcquisitionDefinitionError(`${source} is not registered by the lifecycle catalog for ${definition.triggerEventType}.`);
+      throw new AcquisitionDefinitionError(
+        `${source} is not registered by the lifecycle catalog for ${definition.triggerEventType}.`,
+      );
     }
   }
 
@@ -160,18 +170,33 @@ export function validateAcquisitionDefinition(definition: AcquisitionAutomationD
   assertContainsAll("stopRules", definition.stopRules, descriptor.requiredStopRules);
   assertSubset("stopRules", definition.stopRules, descriptor.allowedStopRules);
 
+  assertIntegerRange("expirationSeconds", definition.expirationSeconds, 1, MAX_ACQUISITION_EXPIRATION_SECONDS);
+
   if (!definition.steps.length || definition.steps.length > MAX_ACQUISITION_STEPS) {
-    throw new AcquisitionDefinitionError(`Automation must contain between 1 and ${MAX_ACQUISITION_STEPS} email steps.`);
+    throw new AcquisitionDefinitionError(
+      `Automation must contain between 1 and ${MAX_ACQUISITION_STEPS} email steps.`,
+    );
   }
   uniqueStrings("step IDs", definition.steps.map((step) => step.stepId));
   for (const [index, step] of definition.steps.entries()) {
     nonEmpty(`steps[${index}].stepId`, step.stepId);
     if (!descriptor.allowedScheduleKinds.includes(step.schedule.kind)) {
-      throw new AcquisitionDefinitionError(`${definition.automationId} does not allow ${step.schedule.kind} scheduling.`);
+      throw new AcquisitionDefinitionError(
+        `${definition.automationId} does not allow ${step.schedule.kind} scheduling.`,
+      );
     }
-    const seconds = step.schedule.kind === "after-trigger" ? step.schedule.delaySeconds : step.schedule.offsetSeconds;
+    const seconds = step.schedule.kind === "after-trigger"
+      ? step.schedule.delaySeconds
+      : step.schedule.offsetSeconds;
     assertIntegerRange(`steps[${index}].schedule`, seconds, 0, MAX_ACQUISITION_DELAY_SECONDS);
-    if (step.action.kind !== "email") throw new AcquisitionDefinitionError("Release 2 acquisition actions must be email actions.");
+    if (step.schedule.kind === "after-trigger" && step.schedule.delaySeconds >= definition.expirationSeconds) {
+      throw new AcquisitionDefinitionError(
+        `steps[${index}].schedule must occur before the automation expiration window.`,
+      );
+    }
+    if (step.action.kind !== "email") {
+      throw new AcquisitionDefinitionError("Release 2 acquisition actions must be email actions.");
+    }
     nonEmpty(`steps[${index}].templateId`, step.action.templateId);
     nonEmpty(`steps[${index}].templateVersionId`, step.action.templateVersionId);
     if (step.action.purpose !== "service" && step.action.purpose !== "promotional") {
@@ -179,13 +204,31 @@ export function validateAcquisitionDefinition(definition: AcquisitionAutomationD
     }
   }
 
-  assertIntegerRange("expirationSeconds", definition.expirationSeconds, 1, MAX_ACQUISITION_EXPIRATION_SECONDS);
-  assertIntegerRange("retryPolicy.maxAttempts", definition.retryPolicy.maxAttempts, 1, 8);
+  // Track D's current provider command is intentionally bounded to three
+  // provider attempts. E cannot configure a looser runtime policy around it.
+  assertIntegerRange("retryPolicy.maxAttempts", definition.retryPolicy.maxAttempts, 1, 3);
   assertIntegerRange("retryPolicy.baseBackoffSeconds", definition.retryPolicy.baseBackoffSeconds, 1, 86_400);
-  assertIntegerRange("retryPolicy.maxBackoffSeconds", definition.retryPolicy.maxBackoffSeconds, definition.retryPolicy.baseBackoffSeconds, 604_800);
-  assertIntegerRange("frequencyPolicy.maxProviderAcceptedEffects", definition.frequencyPolicy.maxProviderAcceptedEffects, 1, 20);
-  assertIntegerRange("frequencyPolicy.windowSeconds", definition.frequencyPolicy.windowSeconds, 60, 60 * 60 * 24 * 90);
-  if (Number.isNaN(Date.parse(definition.publishedAt))) throw new AcquisitionDefinitionError("publishedAt must be an ISO-compatible timestamp.");
+  assertIntegerRange(
+    "retryPolicy.maxBackoffSeconds",
+    definition.retryPolicy.maxBackoffSeconds,
+    definition.retryPolicy.baseBackoffSeconds,
+    604_800,
+  );
+  assertIntegerRange(
+    "frequencyPolicy.maxProviderAcceptedEffects",
+    definition.frequencyPolicy.maxProviderAcceptedEffects,
+    1,
+    20,
+  );
+  assertIntegerRange(
+    "frequencyPolicy.windowSeconds",
+    definition.frequencyPolicy.windowSeconds,
+    60,
+    60 * 60 * 24 * 90,
+  );
+  if (Number.isNaN(Date.parse(definition.publishedAt))) {
+    throw new AcquisitionDefinitionError("publishedAt must be an ISO-compatible timestamp.");
+  }
 
   return definition;
 }
