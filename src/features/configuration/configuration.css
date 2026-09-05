@@ -20,6 +20,8 @@
 .track-a-checklist-item>div { display:grid; gap:2px; }
 .track-a-checklist-item small { display:block; }
 .track-a-workspace { display:grid; grid-template-columns:minmax(520px,1fr) minmax(400px,.9fr); gap:22px; align-items:start; }
+.track-a-editor-fieldset { min-width:0; margin:0; padding:0; border:0; }
+.track-a-editor-fieldset:disabled { opacity:.78; }
 .track-a-editor { display:grid; gap:14px; min-width:0; }
 .track-a-editor>details { border:1px solid var(--n-border); border-radius:var(--n-radius-card); background:var(--n-surface); overflow:hidden; }
 .track-a-editor>details>summary { min-height:54px; display:flex; align-items:center; padding:12px 18px; cursor:pointer; font-weight:700; }
