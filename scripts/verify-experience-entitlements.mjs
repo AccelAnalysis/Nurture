@@ -11,6 +11,8 @@ import {
 } from "../shared/experience/entitlements.ts";
 import { REFERENCE_ASSESSMENT_CAPABILITIES } from "../shared/experience/reference-capabilities.ts";
 
+const experienceId = "org-a:primary:nurture.reference-assessment";
+const declaredCapabilities = [{ key: REFERENCE_ASSESSMENT_CAPABILITIES.deepDive }];
 const offer = {
   id: "premium",
   organizationId: "org-a",
@@ -35,8 +37,8 @@ const subscription = {
 const projection = projectCommercialEntitlements({
   offer,
   subscription,
-  experienceId: "org-a:primary:nurture.reference-assessment",
-  declaredCapabilities: [{ key: REFERENCE_ASSESSMENT_CAPABILITIES.deepDive }],
+  experienceId,
+  declaredCapabilities,
   fetchedAt: "2026-09-05T12:01:00.000Z",
 });
 
@@ -50,7 +52,7 @@ const allowed = authorizeProjectedCapability({
   snapshot: projection.snapshot,
   organizationId: "org-a",
   customerId: "customer-1",
-  experienceId: "org-a:primary:nurture.reference-assessment",
+  experienceId,
   capabilityKey: REFERENCE_ASSESSMENT_CAPABILITIES.deepDive,
   now: "2026-09-06T12:00:00.000Z",
 });
@@ -60,7 +62,7 @@ const wrongTenant = authorizeProjectedCapability({
   snapshot: projection.snapshot,
   organizationId: "org-b",
   customerId: "customer-1",
-  experienceId: "org-a:primary:nurture.reference-assessment",
+  experienceId,
   capabilityKey: REFERENCE_ASSESSMENT_CAPABILITIES.deepDive,
   now: "2026-09-06T12:00:00.000Z",
 });
@@ -70,7 +72,7 @@ const expired = authorizeProjectedCapability({
   snapshot: projection.snapshot,
   organizationId: "org-a",
   customerId: "customer-1",
-  experienceId: "org-a:primary:nurture.reference-assessment",
+  experienceId,
   capabilityKey: REFERENCE_ASSESSMENT_CAPABILITIES.deepDive,
   now: "2026-11-01T12:00:00.000Z",
 });
@@ -79,19 +81,50 @@ assert.deepEqual(expired, { allowed: false, reason: "entitlement-expired" });
 const canceled = projectCommercialEntitlements({
   offer,
   subscription: { ...subscription, status: "canceled" },
-  experienceId: "org-a:primary:nurture.reference-assessment",
-  declaredCapabilities: [{ key: REFERENCE_ASSESSMENT_CAPABILITIES.deepDive }],
+  experienceId,
+  declaredCapabilities,
   fetchedAt: "2026-09-05T12:01:00.000Z",
 });
 assert.equal(canceled.ok, true);
 if (!canceled.ok) throw new Error("Expected canceled subscription projection to return an empty trusted snapshot.");
 assert.equal(canceled.snapshot.entitlements.length, 0);
 
+const missingTrialExpiration = projectCommercialEntitlements({
+  offer,
+  subscription: {
+    ...subscription,
+    status: "trialing",
+    currentPeriodEnd: undefined,
+    trialEnd: undefined,
+  },
+  experienceId,
+  declaredCapabilities,
+});
+assert.deepEqual(missingTrialExpiration, {
+  ok: false,
+  reason: "trial-expiration-unavailable",
+  explanation: "A trialing subscription must include a valid trusted trial or current-period end before it can grant Experience access.",
+});
+
+const boundedTrial = projectCommercialEntitlements({
+  offer,
+  subscription: {
+    ...subscription,
+    status: "trialing",
+    trialEnd: "2026-09-19T12:00:00.000Z",
+  },
+  experienceId,
+  declaredCapabilities,
+});
+assert.equal(boundedTrial.ok, true);
+if (!boundedTrial.ok) throw new Error("Expected a bounded trusted trial to project access.");
+assert.equal(boundedTrial.snapshot.entitlements[0]?.expiresAt, "2026-09-19T12:00:00.000Z");
+
 const crossTenantProjection = projectCommercialEntitlements({
   offer,
   subscription: { ...subscription, organizationId: "org-b" },
-  experienceId: "org-a:primary:nurture.reference-assessment",
-  declaredCapabilities: [{ key: REFERENCE_ASSESSMENT_CAPABILITIES.deepDive }],
+  experienceId,
+  declaredCapabilities,
 });
 assert.deepEqual(crossTenantProjection, {
   ok: false,
@@ -100,7 +133,7 @@ assert.deepEqual(crossTenantProjection, {
 });
 
 const configuredExperience = {
-  id: "org-a:primary:nurture.reference-assessment",
+  id: experienceId,
   organizationId: "org-a",
   moduleId: "nurture.reference-assessment",
   moduleVersion: "1.0.0",
@@ -140,6 +173,7 @@ assert.equal(publishedExperience?.configuration.title, "Organization Momentum Ch
 assert.equal(publishedExperience?.status, "published");
 
 const organizationSource = createTrackAExperienceOrganizationSource(() => "org-public");
+assert.equal(organizationSource.resolveOrganizationId({ accessMode: "public" }), "org-public");
 assert.equal(organizationSource.resolveOrganizationId({ accessMode: "trial" }), "org-public");
 assert.equal(
   organizationSource.resolveOrganizationId({ accessMode: "authenticated", authenticatedOrganizationId: "org-auth" }),
