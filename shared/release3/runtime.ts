@@ -62,8 +62,8 @@ export function evaluatePredicate(predicate: RulePredicate, facts: SegmentFact[]
 export function evaluateConditionGroup(group: ConditionGroup | undefined, facts: SegmentFact[]): boolean {
   if (!group || group.predicates.length === 0) return true;
   return group.mode === "all"
-    ? group.predicates.every((predicate) => evaluatePredicate(predicate, input.facts))
-    : group.predicates.some((predicate) => evaluatePredicate(predicate, input.facts));
+    ? group.predicates.every((predicate) => evaluatePredicate(predicate, facts))
+    : group.predicates.some((predicate) => evaluatePredicate(predicate, facts));
 }
 
 function inHours(now: string, then: string): number { return Math.max(0, (Date.parse(now) - Date.parse(then)) / 3_600_000); }
