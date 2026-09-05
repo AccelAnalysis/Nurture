@@ -27,136 +27,41 @@ export type LifecycleSubjectKind =
   | "configuration";
 
 export const EVENT_CATALOG = {
-  "public.page_viewed": {
-    owner: "A",
-    allowedSources: ["browser"] as const,
-    family: "public",
-  },
-  "public.cta_selected": {
-    owner: "A",
-    allowedSources: ["browser"] as const,
-    family: "public",
-  },
-  "visitor.identified": {
-    owner: "C",
-    allowedSources: ["domain_action", "trusted_server"] as const,
-    family: "identity",
-  },
-  "lead.created": {
-    owner: "C",
-    allowedSources: ["domain_action", "trusted_server"] as const,
-    family: "identity",
-  },
-  "registration.started": {
-    owner: "C",
-    allowedSources: ["browser", "domain_action"] as const,
-    family: "identity",
-  },
-  "registration.completed": {
-    owner: "C",
-    allowedSources: ["domain_action", "trusted_server"] as const,
-    family: "identity",
-  },
-  "identity.verified": {
-    owner: "C",
-    allowedSources: ["domain_action", "trusted_server"] as const,
-    family: "identity",
-  },
-  "trial.started": {
-    owner: "B",
-    allowedSources: ["domain_action", "trusted_server"] as const,
-    family: "experience",
-  },
-  "offer.viewed": {
-    owner: "D",
-    allowedSources: ["browser", "domain_action"] as const,
-    family: "offers",
-  },
-  "checkout.started": {
-    owner: "D",
-    allowedSources: ["browser", "domain_action"] as const,
-    family: "commerce",
-  },
-  "checkout.abandoned": {
-    owner: "D",
-    allowedSources: ["scheduler", "trusted_server"] as const,
-    family: "commerce",
-  },
-  "checkout.completed": {
-    owner: "D",
-    allowedSources: ["provider_webhook", "trusted_server"] as const,
-    family: "commerce",
-  },
-  "subscription.started": {
-    owner: "D",
-    allowedSources: ["provider_webhook", "trusted_server"] as const,
-    family: "commerce",
-  },
-  "subscription.updated": {
-    owner: "D",
-    allowedSources: ["provider_webhook", "trusted_server"] as const,
-    family: "commerce",
-  },
-  "subscription.renewed": {
-    owner: "D",
-    allowedSources: ["provider_webhook", "trusted_server"] as const,
-    family: "commerce",
-  },
-  "subscription.cancelled": {
-    owner: "D",
-    allowedSources: ["provider_webhook", "trusted_server"] as const,
-    family: "commerce",
-  },
-  "onboarding.started": {
-    owner: "C",
-    allowedSources: ["domain_action", "trusted_server"] as const,
-    family: "onboarding",
-  },
-  "onboarding.step_completed": {
-    owner: "C",
-    allowedSources: ["domain_action", "trusted_server"] as const,
-    family: "onboarding",
-  },
-  "onboarding.completed": {
-    owner: "C",
-    allowedSources: ["domain_action", "trusted_server"] as const,
-    family: "onboarding",
-  },
-  "experience.started": {
-    owner: "B",
-    allowedSources: ["browser", "domain_action", "trusted_server"] as const,
-    family: "experience",
-  },
-  "experience.milestone_reached": {
-    owner: "B",
-    allowedSources: ["domain_action", "trusted_server"] as const,
-    family: "experience",
-  },
-  "experience.premium_feature_requested": {
-    owner: "B",
-    allowedSources: ["browser", "domain_action", "trusted_server"] as const,
-    family: "experience",
-  },
-  "experience.inactive": {
-    owner: "B",
-    allowedSources: ["scheduler", "trusted_server"] as const,
-    family: "experience",
-  },
-  "survey.completed": {
-    owner: "future",
-    allowedSources: ["domain_action", "trusted_server"] as const,
-    family: "satisfaction",
-  },
-  "referral.created": {
-    owner: "future",
-    allowedSources: ["domain_action", "trusted_server"] as const,
-    family: "referral",
-  },
-  "configuration.published": {
-    owner: "A",
-    allowedSources: ["administrator", "trusted_server"] as const,
-    family: "publishing",
-  },
+  "public.page_viewed": { owner: "A", allowedSources: ["browser"] as const, family: "public" },
+  "public.cta_selected": { owner: "A", allowedSources: ["browser"] as const, family: "public" },
+  "visitor.identified": { owner: "C", allowedSources: ["domain_action", "trusted_server"] as const, family: "identity" },
+  "lead.created": { owner: "C", allowedSources: ["domain_action", "trusted_server"] as const, family: "identity" },
+  "registration.started": { owner: "C", allowedSources: ["browser", "domain_action"] as const, family: "identity" },
+  "registration.completed": { owner: "C", allowedSources: ["domain_action", "trusted_server"] as const, family: "identity" },
+  "identity.verified": { owner: "C", allowedSources: ["domain_action", "trusted_server"] as const, family: "identity" },
+  "trial.started": { owner: "B", allowedSources: ["domain_action", "trusted_server"] as const, family: "experience" },
+  "offer.viewed": { owner: "D", allowedSources: ["browser", "domain_action"] as const, family: "offers" },
+  "checkout.started": { owner: "D", allowedSources: ["browser", "domain_action"] as const, family: "commerce" },
+  "checkout.abandoned": { owner: "D", allowedSources: ["scheduler", "trusted_server"] as const, family: "commerce" },
+  "checkout.completed": { owner: "D", allowedSources: ["provider_webhook", "trusted_server"] as const, family: "commerce" },
+  "subscription.started": { owner: "D", allowedSources: ["provider_webhook", "trusted_server"] as const, family: "commerce" },
+  "subscription.updated": { owner: "D", allowedSources: ["provider_webhook", "trusted_server"] as const, family: "commerce" },
+  "subscription.renewed": { owner: "D", allowedSources: ["provider_webhook", "trusted_server"] as const, family: "commerce" },
+  "subscription.cancelled": { owner: "D", allowedSources: ["provider_webhook", "trusted_server"] as const, family: "commerce" },
+  "onboarding.started": { owner: "C", allowedSources: ["domain_action", "trusted_server"] as const, family: "onboarding" },
+  "onboarding.step_completed": { owner: "C", allowedSources: ["domain_action", "trusted_server"] as const, family: "onboarding" },
+  "onboarding.completed": { owner: "C", allowedSources: ["domain_action", "trusted_server"] as const, family: "onboarding" },
+  "experience.started": { owner: "B", allowedSources: ["browser", "domain_action", "trusted_server"] as const, family: "experience" },
+  "experience.milestone_reached": { owner: "B", allowedSources: ["domain_action", "trusted_server"] as const, family: "experience" },
+  "experience.premium_feature_requested": { owner: "B", allowedSources: ["browser", "domain_action", "trusted_server"] as const, family: "experience" },
+  "experience.inactive": { owner: "B", allowedSources: ["scheduler", "trusted_server"] as const, family: "experience" },
+  "communication.provider_accepted": { owner: "D", allowedSources: ["trusted_server"] as const, family: "communications" },
+  "communication.delivered": { owner: "D", allowedSources: ["provider_webhook", "trusted_server"] as const, family: "communications" },
+  "communication.bounced": { owner: "D", allowedSources: ["provider_webhook", "trusted_server"] as const, family: "communications" },
+  "communication.dropped": { owner: "D", allowedSources: ["provider_webhook", "trusted_server"] as const, family: "communications" },
+  "communication.complained": { owner: "D", allowedSources: ["provider_webhook", "trusted_server"] as const, family: "communications" },
+  "communication.unsubscribed": { owner: "D", allowedSources: ["provider_webhook", "domain_action", "trusted_server"] as const, family: "communications" },
+  "communication.suppressed": { owner: "D", allowedSources: ["trusted_server"] as const, family: "communications" },
+  "communication.failed": { owner: "D", allowedSources: ["provider_webhook", "trusted_server"] as const, family: "communications" },
+  "communication.outcome_unknown": { owner: "D", allowedSources: ["trusted_server"] as const, family: "communications" },
+  "survey.completed": { owner: "future", allowedSources: ["domain_action", "trusted_server"] as const, family: "satisfaction" },
+  "referral.created": { owner: "future", allowedSources: ["domain_action", "trusted_server"] as const, family: "referral" },
+  "configuration.published": { owner: "A", allowedSources: ["administrator", "trusted_server"] as const, family: "publishing" },
 } as const;
 
 export type NurtureEventType = keyof typeof EVENT_CATALOG;
@@ -165,15 +70,8 @@ export type ExperienceModuleEventType = `experience.${string}.${string}`;
 export type AnalyticsEventType = NurtureEventType | ExperienceModuleEventType;
 export type AnalyticsFamily = (typeof EVENT_CATALOG)[NurtureEventType]["family"] | "experience-module";
 
-export interface LifecycleSubject {
-  kind: LifecycleSubjectKind;
-  id: string;
-}
+export interface LifecycleSubject { kind: LifecycleSubjectKind; id: string; }
 
-/**
- * Browser/client submission. Hints are deliberately non-authoritative; a trusted
- * ingestion boundary must bind tenant, subject, source, and receipt time.
- */
 export interface LifecycleEventSubmission {
   eventId: string;
   eventType: AnalyticsEventType;
@@ -194,7 +92,6 @@ export interface LifecycleEventSubmission {
   payload: EventPayload;
 }
 
-/** Persisted form after a trusted boundary validates and binds the submission. */
 export interface LifecycleEventEnvelope {
   eventId: string;
   eventType: AnalyticsEventType;
