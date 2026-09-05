@@ -10,6 +10,12 @@ Nurture is a general app hub built around the Seven-Stage Customer Pipeline.
 - **GitHub** — source control and CI/CD
 - **nurture.accelanalysis.com** — production domain
 
+## Brand system
+
+The shared Nurture brand system lives in [`brand/`](brand/README.md). It contains the canonical Nurture **N** logo, platform-neutral design tokens, CSS variables and glass-material fallbacks, accessibility rules, and a static visual preview.
+
+All app modules and future builds should consume the shared brand assets rather than creating local copies of colors, radii, typography, glass values, or logo artwork.
+
 ## Firebase project
 
 Project ID: `nurture-12398`
