@@ -3,6 +3,7 @@ import { OrganizationShell, ParticipantShell, PlatformAdminShell, PublicShell } 
 import { EmptyState, LoadingState } from "../../components/ui";
 import { useOrganization } from "../../context/OrganizationContext";
 import { usePlatform } from "../../context/PlatformContext";
+import { ExperienceHost } from "../../features/experience/ExperienceHost";
 import { AuthenticatedRoute, IdentityRouteBoundary, isIdentityRoute } from "../../features/identity/IdentityBoundary";
 import { useAuth } from "../../features/identity/auth";
 import { OnboardingRouteBoundary } from "../../features/onboarding/OnboardingBoundary";
@@ -12,15 +13,13 @@ import { PlatformAdminRoute } from "../../features/platform/PlatformAdminRoute";
 import { CustomerPage } from "../../pages/AppPages";
 import { AddContact, ContactDetail, OrganizationPage } from "../../pages/OrgPages";
 import { PlatformPage } from "../../pages/PlatformPages";
-import { MarketingHome, PublicExperience, PublicInfoPage, PublicOfferDetail, PublicOffersPage, PublicSurvey, ReferralLanding } from "../../pages/PublicPages";
+import { MarketingHome, PublicInfoPage, PublicOfferDetail, PublicOffersPage, PublicSurvey, ReferralLanding } from "../../pages/PublicPages";
 import { navigate, useRoute } from "../../router";
 import { organizationSectionCapability, platformSectionCapability } from "../../security/authorization";
 
 const publicInfoRoutes = ["/features", "/how-it-works", "/about", "/help", "/contact", "/privacy", "/terms"];
 const participantRoutes = new Set([
   "/app",
-  "/app/experience",
-  "/app/secondary",
   "/app/offers",
   "/app/notifications",
   "/app/feedback",
@@ -78,7 +77,13 @@ export function AppRouter() {
   if (publicInfoRoutes.includes(route.path)) return <PublicShell><PublicInfoPage path={route.path} /></PublicShell>;
   if (route.path === "/offers") return <PublicShell><PublicOffersPage /></PublicShell>;
   if (first === "offers" && second) return <PublicShell><PublicOfferDetail offerId={second} /></PublicShell>;
-  if (route.path === "/experience") return <ParticipantShell mode="trial"><PublicExperience /></ParticipantShell>;
+  if (first === "experience") {
+    return (
+      <ParticipantShell mode="trial">
+        <ExperienceHost slot="primary" accessMode="trial" relativePath={route.segments.slice(1).join("/")} />
+      </ParticipantShell>
+    );
+  }
   if (first === "r" && second) return <PublicShell><ReferralLanding code={second} /></PublicShell>;
   if (first === "survey" && second) return <PublicShell><PublicSurvey surveyId={second} /></PublicShell>;
 
@@ -86,13 +91,17 @@ export function AppRouter() {
   if (first === "onboarding") return <OnboardingRouteBoundary step={second} />;
 
   if (first === "app") {
+    const participantContent = second === "experience"
+      ? <ExperienceHost slot="primary" accessMode="authenticated" relativePath={route.segments.slice(2).join("/")} />
+      : second === "secondary"
+        ? <ExperienceHost slot="secondary" accessMode="authenticated" relativePath={route.segments.slice(2).join("/")} />
+        : participantRoutes.has(route.path)
+          ? <CustomerPage path={route.path} />
+          : <ParticipantStateView state="unavailable" title="Participant destination unavailable" description="This /app route is not registered with the participant application skeleton." />;
+
     return (
       <AuthenticatedRoute>
-        <AuthenticatedParticipant>
-          {participantRoutes.has(route.path)
-            ? <CustomerPage path={route.path} />
-            : <ParticipantStateView state="unavailable" title="Participant destination unavailable" description="This /app route is not registered with the participant application skeleton." />}
-        </AuthenticatedParticipant>
+        <AuthenticatedParticipant>{participantContent}</AuthenticatedParticipant>
       </AuthenticatedRoute>
     );
   }
