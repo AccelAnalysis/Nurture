@@ -3,6 +3,8 @@ import {
   AnalyticsContractError,
   bindLifecycleEvent,
   createLifecycleEventSubmission,
+  isAnalyticsEventType,
+  isExperienceModuleEventType,
   isNurtureEventType,
   isSourceAllowedForEvent,
   validateEventPayload,
@@ -22,7 +24,7 @@ assert.equal(pageView.correlationId, "session-1");
 assert.equal(pageView.idempotencyKey, "evt-001");
 assert.equal(pageView.schemaVersion, 1);
 assert.equal(isNurtureEventType("public.page_viewed"), true);
-assert.equal(isNurtureEventType("made.up"), false);
+assert.equal(isAnalyticsEventType("made.up"), false);
 
 const boundPageView = bindLifecycleEvent(pageView, {
   organizationId: "org-1",
@@ -32,6 +34,31 @@ const boundPageView = bindLifecycleEvent(pageView, {
 assert.equal(boundPageView.organizationId, "org-1");
 assert.equal(boundPageView.subjectKind, "visitor");
 assert.equal(boundPageView.source, "browser");
+
+const moduleEvent = createLifecycleEventSubmission(
+  "experience.reference-assessment.completed",
+  { completedQuestions: 3 },
+  {
+    dataMode: "test",
+    organizationIdHint: "browser-claimed-org",
+    customerIdHint: "browser-claimed-customer",
+    experienceId: "experience-1",
+    experienceModuleId: "nurture.reference-assessment",
+    experienceModuleVersion: "1.0.0",
+  },
+  { id: () => "evt-module", now },
+);
+assert.equal(isExperienceModuleEventType(moduleEvent.eventType), true);
+assert.equal(isSourceAllowedForEvent(moduleEvent.eventType, "browser"), true);
+const boundModuleEvent = bindLifecycleEvent(moduleEvent, {
+  organizationId: "verified-org",
+  source: "browser",
+  customerId: "verified-customer",
+}, { now });
+assert.equal(boundModuleEvent.organizationId, "verified-org");
+assert.equal(boundModuleEvent.customerId, "verified-customer");
+assert.notEqual(boundModuleEvent.organizationId, moduleEvent.organizationIdHint);
+assert.notEqual(boundModuleEvent.customerId, moduleEvent.customerIdHint);
 
 const checkoutCompleted = createLifecycleEventSubmission(
   "checkout.completed",
@@ -73,6 +100,10 @@ assert.throws(
 );
 assert.throws(
   () => validateEventPayload({ invalid: Number.NaN }),
+  AnalyticsContractError,
+);
+assert.throws(
+  () => createLifecycleEventSubmission("experience.started.unregistered.extra", {}, {}, { id, now }),
   AnalyticsContractError,
 );
 
