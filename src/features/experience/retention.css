@@ -1,0 +1,8 @@
+.r3-treatment { margin-block: 1rem; border: 1px solid color-mix(in srgb, currentColor 16%, transparent); border-radius: 1rem; background: var(--n-surface, Canvas); color: var(--n-text, CanvasText); padding: 1rem; }
+.r3-treatment__header { display: flex; align-items: start; justify-content: space-between; gap: 1rem; }
+.r3-treatment__header h2 { margin: 0; font-size: 1.05rem; }
+.r3-treatment__actions { display: flex; flex-wrap: wrap; gap: .65rem; margin-top: 1rem; }
+.r3-treatment button, .r3-treatment a { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; padding-inline: 1rem; font: inherit; }
+.r3-treatment button:focus-visible, .r3-treatment a:focus-visible { outline: 3px solid currentColor; outline-offset: 2px; }
+.r3-treatment__status { opacity: .75; }
+@media (forced-colors: active) { .r3-treatment { border: 1px solid CanvasText; } }
