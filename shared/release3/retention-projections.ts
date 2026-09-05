@@ -3,14 +3,14 @@ import type {
   EventPayload,
   LifecycleEventEnvelope,
   LifecycleEventSource,
-} from "../analytics/contracts";
+} from "../analytics/contracts.js";
 import type {
   CancellationProjection,
   CommercialServicingSummary,
   EngagementProjection,
   ProvenanceRef,
   SegmentFact,
-} from "./contracts";
+} from "./contracts.js";
 
 export const RELEASE3_EVENT_CATALOG = {
   "experience.reactivated": { allowedSources: ["domain_action", "trusted_server"] as const, dimension: "engagement" },
@@ -99,6 +99,7 @@ function sourceToProvenance(event: Release3LifecycleEventEnvelope): ProvenanceRe
 function atOrAfter(current: string | undefined, candidate: string): boolean { return !current || candidate >= current; }
 function normalizedSubscriptionState(value: string | undefined): CommercialServicingSummary["subscriptionState"] | undefined {
   if (!value) return undefined;
+  if (value === "incomplete_expired") return "incomplete";
   const allowed: CommercialServicingSummary["subscriptionState"][] = ["none", "trialing", "active", "past_due", "unpaid", "paused", "canceled", "incomplete"];
   return allowed.includes(value as CommercialServicingSummary["subscriptionState"]) ? value as CommercialServicingSummary["subscriptionState"] : undefined;
 }
