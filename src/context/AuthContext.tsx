@@ -1,4 +1,4 @@
-import { localDemoEnabled } from "../app/release/readiness";
+import { localDemoEnabled, releaseBackendReady, backendUnavailableMessage } from "../app/release/readiness";
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { User } from "firebase/auth";
 import { authService } from "../services/authService";
@@ -38,12 +38,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!releaseBackendReady) {
+      setLoading(false);
+      return;
+    }
     let active = true;
     let authGeneration = 0;
     let unsubscribe: () => void = () => {};
     authService
       .initializePersistence()
       .then(() => {
+        if (!active) return;
         unsubscribe = authService.observe((user) => {
           if (!active) return;
           const generation = ++authGeneration;
@@ -117,6 +122,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [customerProfile, demoRole, firebaseUser]);
 
   async function refreshCustomerProfile() {
+    if (!releaseBackendReady) throw new Error(backendUnavailableMessage);
     const user = authService.getCurrentUser();
     if (!user || user.isAnonymous) {
       setCustomerProfile(null);
@@ -129,6 +135,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function updateCustomerProfile(changes: CustomerProfileChanges) {
+    if (!releaseBackendReady) throw new Error(backendUnavailableMessage);
     const user = authService.getCurrentUser();
     if (!user || user.isAnonymous) throw new Error("A registered identity is required to update the customer profile.");
     const profile = await customerProfileRepository.update(user.uid, changes);
