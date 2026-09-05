@@ -16,12 +16,12 @@ function requireFunctions() {
 }
 
 export async function listPublishedOffers(organizationId: string) {
-  const callable = httpsCallable<{ organizationId: string }, { offers: CommercialOffer[] }>(
-    requireFunctions(),
-    "listPublishedOffers",
-  );
+  const callable = httpsCallable<
+    { organizationId: string },
+    { offers: CommercialOffer[]; trialsEnabled: boolean }
+  >(requireFunctions(), "listPublishedOffers");
   const result = await callable({ organizationId });
-  return result.data.offers;
+  return result.data;
 }
 
 export async function listOrganizationOffers(organizationId: string) {
