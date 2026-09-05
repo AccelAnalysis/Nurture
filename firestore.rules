@@ -1,0 +1,13 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Release 2 authoritative persistence is server-mediated. Firebase Admin
+    // SDK operations in trusted Cloud Functions bypass these rules; browser
+    // clients never receive direct mutation authority for customer, lifecycle,
+    // billing, communication, automation, audit, or control records.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

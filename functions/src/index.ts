@@ -36,7 +36,13 @@ export {
 } from "./communications/admin.js";
 export { sendGridEventWebhook } from "./communications/webhook.js";
 
-// Track B's Experience milestone callable factory is intentionally not exported
-// until E's concrete durable event/binding composition is available. Exporting an
-// uncomposed handler would create a browser-facing path that cannot satisfy the
-// trusted append/deduplication contract.
+export {
+  appendLifecycleEvent,
+  projectLifecycleEvent,
+  recordExperienceMilestone,
+} from "./lifecycle/backend.js";
+
+export {
+  drainAcquisitionJobs,
+  enrollAcquisitionFromLifecycle,
+} from "./acquisition/backend.js";
