@@ -1,13 +1,14 @@
 import type { EventPayload } from "../../../shared/analytics/contracts.js";
+import type { ReferralProgramDraft, SurveyDraft, FeedbackScope } from "../../../shared/feedback/contracts.js";
+import { FeedbackError } from "../../../shared/feedback/contracts.js";
+import type { FeedbackEventType } from "../../../shared/feedback/events.js";
 import type { AuditActor, AuditWriteRequest } from "../../../shared/platform/audit.js";
 import type { OrganizationCapability } from "../../../shared/platform/authorization.js";
-import { FeedbackError, type FeedbackScope } from "../../../shared/feedback/contracts.js";
-import type { FeedbackEventType } from "../../../shared/feedback/events.js";
 import { id, invariant } from "../../../shared/feedback/validation.js";
 
 export type Collection = "surveyConfigurations" | "surveyVersions" | "surveyInvitations" | "surveyTokens" | "surveyResponses" | "programConfigurations" | "programVersions" | "referralCodes" | "customerReferralCodes" | "referralAttributions" | "referralProofs" | "customerAttributions" | "referralRewards" | "referralLedger" | "feedbackTreatment" | "feedbackCooldowns" | "referralLimits" | "referralInvitations" | "testCreditEffects";
 export const collections: readonly Collection[] = ["surveyConfigurations", "surveyVersions", "surveyInvitations", "surveyTokens", "surveyResponses", "programConfigurations", "programVersions", "referralCodes", "customerReferralCodes", "referralAttributions", "referralProofs", "customerAttributions", "referralRewards", "referralLedger", "feedbackTreatment", "feedbackCooldowns", "referralLimits", "referralInvitations", "testCreditEffects"];
-/** Minimal action input for the existing lifecycle runtime, NOT a second job/scheduler model. */
+/** Legacy feature-side hint retained for interface compatibility. Production storage does not create a second queue. */
 export interface FeedbackAction {
   effectId: string; customerId: string; kind: "survey-invitation" | "service-recovery" | "referral-invitation" | "reward-status";
   referenceId: string;
@@ -16,7 +17,7 @@ export interface FeedbackEventIntent { id: string; type: FeedbackEventType; cust
 export interface FeedbackTransaction {
   /** Passed through only for trusted adapters that join the same Firestore transaction. */
   readonly native?: unknown;
-  /** Stage a write supplied by the accepted lifecycle/audit/action adapter after all transaction reads complete. */
+  /** Stage a write supplied by the accepted lifecycle/audit adapter after all transaction reads complete. */
   stage(write: () => void): void;
   get<T>(collection: Collection, key: string): Promise<T | null>;
   put<T extends object>(collection: Collection, key: string, value: T): void;
@@ -54,6 +55,8 @@ export interface FeedbackDependencies {
   admit(tx: FeedbackTransaction, scope: FeedbackScope, customerId: string, treatment: "survey" | "referral" | "service-recovery"): Promise<{ allowed: boolean; reason: string }>;
   referralSignal(tx: FeedbackTransaction, scope: FeedbackScope, customerId: string, eventId: string): Promise<boolean>;
   qualification(tx: FeedbackTransaction, scope: FeedbackScope, evidenceId: string): Promise<QualificationFacts | null>;
+  /** Refresh a disabled R3 automation draft when a feedback entity publishes. Never silently publish or enable it. */
+  syncAutomation(scope: FeedbackScope, kind: "survey" | "program", entityId: string, feedbackVersionId: string, draft: SurveyDraft | ReferralProgramDraft, actorUid: string): Promise<void>;
 }
 export function assertScope(scope: FeedbackScope): void {
   id(scope.organizationId);
