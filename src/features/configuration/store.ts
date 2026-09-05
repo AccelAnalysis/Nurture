@@ -2,11 +2,12 @@ import { NURTURE_DEFAULT_TEMPLATE_VERSION } from "./defaults";
 import { deriveOrganizationOverrides, resolveOrganizationConfiguration } from "./resolver";
 import {
   CONFIGURATION_SCHEMA_VERSION,
+  type ConfigurationExtension,
   type ConfigurationVersion,
   type OrganizationConfiguration,
-  type OrganizationConfigurationOverride,
   type OrganizationConfigurationRecord,
   type Publication,
+  type PublishedConfigurationExtension,
 } from "./types";
 
 export const CONFIGURATION_CHANGED_EVENT = "nurture:configuration-changed";
@@ -15,8 +16,15 @@ export interface ConfigurationStore {
   getRecord(organizationId: string): OrganizationConfigurationRecord;
   getDraft(organizationId: string): OrganizationConfiguration;
   getPublished(organizationId: string): OrganizationConfiguration;
+  getDraftExtension(organizationId: string, extensionKey: string): ConfigurationExtension | null;
+  getPublishedExtension(organizationId: string, extensionKey: string): PublishedConfigurationExtension | null;
   saveDraft(organizationId: string, effective: OrganizationConfiguration): OrganizationConfigurationRecord;
+  saveDraftExtension(organizationId: string, extensionKey: string, extension: ConfigurationExtension): OrganizationConfigurationRecord;
+  removeDraftExtension(organizationId: string, extensionKey: string): OrganizationConfigurationRecord;
+  /** Reset only Track A-owned Brand/Site/metadata draft values; cross-track extension drafts survive. */
   resetDraft(organizationId: string): OrganizationConfigurationRecord;
+  /** Explicit destructive reset for orchestration/testing that intentionally clears every draft domain. */
+  resetAllDraft(organizationId: string): OrganizationConfigurationRecord;
   publish(organizationId: string, publishedBy?: string): OrganizationConfigurationRecord;
 }
 
@@ -36,6 +44,13 @@ function clone<T>(value: T): T {
 
 function isBrowser() {
   return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+}
+
+function normalizeEffective(configuration: OrganizationConfiguration): OrganizationConfiguration {
+  return {
+    ...configuration,
+    extensions: configuration.extensions ?? {},
+  };
 }
 
 export class BrowserConfigurationStore implements ConfigurationStore {
@@ -92,7 +107,30 @@ export class BrowserConfigurationStore implements ConfigurationStore {
     const record = this.read(organizationId);
     if (!record.publication) return resolveOrganizationConfiguration(organizationId);
     const version = record.versions.find((item) => item.id === record.publication?.configurationVersionId);
-    return version?.effective ? clone(version.effective) : resolveOrganizationConfiguration(organizationId);
+    return version?.effective
+      ? normalizeEffective(clone(version.effective))
+      : resolveOrganizationConfiguration(organizationId);
+  }
+
+  getDraftExtension(organizationId: string, extensionKey: string) {
+    return clone(this.getDraft(organizationId).extensions[extensionKey] ?? null);
+  }
+
+  getPublishedExtension(organizationId: string, extensionKey: string): PublishedConfigurationExtension | null {
+    const record = this.read(organizationId);
+    if (!record.publication) return null;
+    const version = record.versions.find((item) => item.id === record.publication?.configurationVersionId);
+    if (!version?.effective) return null;
+    const extension = normalizeEffective(version.effective).extensions[extensionKey];
+    if (!extension) return null;
+    return {
+      organizationId,
+      extensionKey,
+      extension: clone(extension),
+      configurationVersionId: version.id,
+      configurationVersion: version.version,
+      publishedAt: version.publishedAt,
+    };
   }
 
   saveDraft(organizationId: string, effective: OrganizationConfiguration) {
@@ -100,13 +138,42 @@ export class BrowserConfigurationStore implements ConfigurationStore {
     const next: OrganizationConfigurationRecord = {
       ...record,
       baseTemplateVersion: NURTURE_DEFAULT_TEMPLATE_VERSION,
-      draftOverrides: deriveOrganizationOverrides(organizationId, effective),
+      draftOverrides: deriveOrganizationOverrides(organizationId, normalizeEffective(effective)),
       draftUpdatedAt: new Date().toISOString(),
     };
     return this.write(next);
   }
 
+  saveDraftExtension(organizationId: string, extensionKey: string, extension: ConfigurationExtension) {
+    const draft = this.getDraft(organizationId);
+    return this.saveDraft(organizationId, {
+      ...draft,
+      extensions: {
+        ...draft.extensions,
+        [extensionKey]: clone(extension),
+      },
+    });
+  }
+
+  removeDraftExtension(organizationId: string, extensionKey: string) {
+    const draft = this.getDraft(organizationId);
+    const extensions = { ...draft.extensions };
+    delete extensions[extensionKey];
+    return this.saveDraft(organizationId, { ...draft, extensions });
+  }
+
   resetDraft(organizationId: string) {
+    const record = this.read(organizationId);
+    const extensions = record.draftOverrides.extensions;
+    return this.write({
+      ...record,
+      baseTemplateVersion: NURTURE_DEFAULT_TEMPLATE_VERSION,
+      draftOverrides: extensions && Object.keys(extensions).length ? { extensions: clone(extensions) } : {},
+      draftUpdatedAt: new Date().toISOString(),
+    });
+  }
+
+  resetAllDraft(organizationId: string) {
     const record = this.read(organizationId);
     return this.write({
       ...record,
@@ -154,6 +221,7 @@ export const configurationStore: ConfigurationStore = new BrowserConfigurationSt
  * Production integration boundary for Track E:
  * replace `configurationStore` with a tenant-authorized implementation that persists
  * the same contracts to the existing Firebase project, enforces organization scope
- * server-side, and emits canonical audit events. UI components must not call Firestore
- * or privileged provider APIs directly.
+ * server-side, uses Track E's `brand.*` authorization and audit conventions, and keeps
+ * opaque extension payloads scoped/versioned without interpreting another track's data.
+ * UI components must not call Firestore or privileged provider APIs directly.
  */
