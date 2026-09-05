@@ -1,24 +1,37 @@
 import { useState } from "react";
+import {
+  REFERENCE_CHECKLIST_ITEMS,
+  REFERENCE_CHECKLIST_MILESTONE_KEY,
+} from "../../../../shared/experience/reference-lifecycle";
 import { Badge, Card } from "../../../components/ui";
 import type { ExperienceModule, ExperienceModuleRenderContext } from "../contracts";
 
-const checklistItems = ["Choose the next action", "Set aside focused time", "Return and mark it complete"] as const;
+function completionActionId(context: ExperienceModuleRenderContext) {
+  const subject = context.customerId ?? context.identityId ?? "public-session";
+  return `reference-checklist-completed:${context.experience.id}:${subject}:v1`;
+}
 
 function Checklist({ context }: { context: ExperienceModuleRenderContext }) {
-  const [complete, setComplete] = useState<Set<number>>(() => new Set());
-  const allComplete = complete.size === checklistItems.length;
+  const [complete, setComplete] = useState<Set<string>>(() => new Set());
+  const allComplete = complete.size === REFERENCE_CHECKLIST_ITEMS.length;
 
-  const toggle = (index: number) => {
+  const toggle = (itemId: string) => {
     const next = new Set(complete);
-    if (next.has(index)) next.delete(index);
-    else next.add(index);
+    if (next.has(itemId)) next.delete(itemId);
+    else next.add(itemId);
     setComplete(next);
-    context.submitEvent("experience.reference-checklist.item_toggled", { item: index + 1, complete: next.has(index) });
-    if (next.size === checklistItems.length) {
+    context.submitEvent("experience.reference-checklist.item_toggled", { itemId, complete: next.has(itemId) });
+    if (next.size === REFERENCE_CHECKLIST_ITEMS.length) {
+      const actionId = completionActionId(context);
       context.submitEvent(
         "experience.reference-checklist.completed",
-        { itemCount: checklistItems.length },
-        `reference-checklist-completed-${context.experience.id}`,
+        { itemCount: REFERENCE_CHECKLIST_ITEMS.length },
+        actionId,
+      );
+      void context.reachMilestone(
+        REFERENCE_CHECKLIST_MILESTONE_KEY,
+        actionId,
+        { completedItemIds: Array.from(next) },
       );
     }
   };
@@ -27,12 +40,12 @@ function Checklist({ context }: { context: ExperienceModuleRenderContext }) {
     <Card>
       <Badge tone={allComplete ? "positive" : "accent"}>{allComplete ? "Complete" : "Portability fixture"}</Badge>
       <h2>{typeof context.configuration.title === "string" ? context.configuration.title : "Next-Step Checklist"}</h2>
-      <p>This secondary module is intentionally a different domain from the assessment fixture. It uses the same host identity, routing, access, state, and event contracts.</p>
+      <p>This secondary module is intentionally a different domain from the assessment fixture. It uses the same host identity, routing, access, typed activity, and trusted milestone command contracts.</p>
       <div className="reference-checklist" role="group" aria-label="Reference checklist">
-        {checklistItems.map((item, index) => (
-          <label key={item} className="reference-checklist-row">
-            <input type="checkbox" checked={complete.has(index)} onChange={() => toggle(index)} />
-            <span>{item}</span>
+        {REFERENCE_CHECKLIST_ITEMS.map((item) => (
+          <label key={item.id} className="reference-checklist-row">
+            <input type="checkbox" checked={complete.has(item.id)} onChange={() => toggle(item.id)} />
+            <span>{item.label}</span>
           </label>
         ))}
       </div>
@@ -45,7 +58,7 @@ export const referenceChecklistModule: ExperienceModule = {
   manifest: {
     id: "nurture.reference-checklist",
     version: "1.0.0",
-    contractVersion: "1.0.0",
+    contractVersion: "1.1.0",
     name: "Next-Step Checklist",
     description: "A second minimal module used to prove that a different Experience can register without changing the host lifecycle architecture.",
     icon: "/brand/logo/nurture-n.svg",
@@ -72,13 +85,35 @@ export const referenceChecklistModule: ExperienceModule = {
     eventDefinitions: [
       {
         name: "experience.reference-checklist.item_toggled",
-        description: "Browser-observed checklist interaction.",
+        description: "Browser-observed ordinary checklist interaction.",
         source: "browser",
+        schemaVersion: 1,
+        maxPayloadBytes: 384,
+        payloadSchema: {
+          itemId: {
+            type: "string",
+            required: true,
+            maxLength: 40,
+            allowedValues: REFERENCE_CHECKLIST_ITEMS.map((item) => item.id),
+          },
+          complete: { type: "boolean", required: true },
+        },
       },
       {
         name: "experience.reference-checklist.completed",
-        description: "Browser-observed completion of the secondary portability fixture.",
+        description: "Browser-observed checklist completion candidate; shared activation still requires trusted validation.",
         source: "browser",
+        schemaVersion: 1,
+        maxPayloadBytes: 256,
+        payloadSchema: {
+          itemCount: {
+            type: "number",
+            required: true,
+            integer: true,
+            min: REFERENCE_CHECKLIST_ITEMS.length,
+            max: REFERENCE_CHECKLIST_ITEMS.length,
+          },
+        },
         requiresServerValidation: true,
       },
     ],
@@ -86,14 +121,19 @@ export const referenceChecklistModule: ExperienceModule = {
     onboardingRequirements: [],
     activityDefinition: {
       meaningfulEvent: "experience.reference-checklist.completed",
-      description: "Completing the checklist is meaningful activity; opening the page is not.",
+      description: "Completing the checklist is meaningful activity; opening the route is not activation.",
       pageViewCountsAsActivity: false,
+      activation: {
+        moduleEvent: "experience.reference-checklist.completed",
+        milestoneKey: REFERENCE_CHECKLIST_MILESTONE_KEY,
+        verification: "trusted-domain-action",
+      },
     },
     dataContract: {
       scope: "session-only",
       retention: "This fixture is intentionally non-persistent.",
       export: "No durable checklist data is created.",
-      migration: "No persisted module records exist in the reference fixture.",
+      migration: "No persisted checklist records exist in the reference fixture.",
     },
     compatibility: {
       hostContract: "1.x",
