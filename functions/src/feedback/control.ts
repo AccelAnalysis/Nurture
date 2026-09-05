@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { HttpsError, onCall } from "firebase-functions/v2/https";
+import { HttpsError, onCall, type CallableRequest } from "firebase-functions/v2/https";
 import { sanitizeAuditMetadata, type AuditRecord } from "../../../shared/platform/audit.js";
 import { assertOrganizationCapability } from "../billing/store.js";
 import { db } from "../firebase.js";
@@ -30,7 +30,7 @@ function organizationId(value: unknown) {
   if (typeof value !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(value)) throw new HttpsError("invalid-argument", "organizationId is invalid.");
   return value;
 }
-function actorUid(request: Parameters<Parameters<typeof onCall>[1]>[0]) {
+function actorUid(request: CallableRequest<unknown>) {
   if (!request.auth?.uid) throw new HttpsError("unauthenticated", "Authentication is required.");
   return request.auth.uid;
 }
