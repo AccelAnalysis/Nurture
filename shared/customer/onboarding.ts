@@ -13,7 +13,7 @@ function safePart(value: string) {
 }
 
 export function onboardingProgressId(scope: OnboardingProgressScope): string {
-  return [scope.dataMode, scope.customerId, scope.experienceId ?? "default", scope.flowId].map(safePart).join("~");
+  return [scope.organizationId, scope.dataMode, scope.customerId, scope.experienceId ?? "default", scope.flowId].map(safePart).join("~");
 }
 
 function requiredAnswerMissing(value: OnboardingAnswer | undefined): boolean {
@@ -54,11 +54,7 @@ function allRequiredComplete(definition: OnboardingFlowDefinitionV2, progress: O
   return definition.steps.filter((step) => step.required).every((step) => progress.steps[step.id] === "complete");
 }
 
-export function createOnboardingProgress(
-  scope: OnboardingProgressScope,
-  definition: OnboardingFlowDefinitionV2,
-  now: string,
-): OnboardingProgressV2 {
+export function createOnboardingProgress(scope: OnboardingProgressScope, definition: OnboardingFlowDefinitionV2, now: string): OnboardingProgressV2 {
   validateOnboardingFlowDefinition(definition);
   if (scope.flowId !== definition.id) throw new Error("Onboarding scope and flow definition do not match.");
   const first = definition.steps[0];
@@ -91,23 +87,14 @@ function validateStepAnswers(step: OnboardingStepDefinitionV2, answers: Record<s
 export function completeOnboardingStep(
   definition: OnboardingFlowDefinitionV2,
   current: OnboardingProgressV2,
-  input: {
-    stepId: string;
-    answers: Record<string, OnboardingAnswer>;
-    agreementAccepted?: boolean;
-    experienceEvidenceId?: string;
-  },
+  input: { stepId: string; answers: Record<string, OnboardingAnswer>; agreementAccepted?: boolean; experienceEvidenceId?: string },
   now: string,
 ): OnboardingStepMutationResult {
   validateOnboardingFlowDefinition(definition);
-  if (definition.id !== current.scope.flowId || definition.version !== current.flowVersion) {
-    throw new Error("Onboarding progress must use its pinned flow version.");
-  }
+  if (definition.id !== current.scope.flowId || definition.version !== current.flowVersion) throw new Error("Onboarding progress must use its pinned flow version.");
   const step = definition.steps.find((candidate) => candidate.id === input.stepId);
   if (!step) throw new Error("This onboarding step is not part of the pinned flow.");
-  if (current.steps[step.id] === "complete") {
-    return { progress: current, stepCompletedNow: false, onboardingCompletedNow: false };
-  }
+  if (current.steps[step.id] === "complete") return { progress: current, stepCompletedNow: false, onboardingCompletedNow: false };
   if (current.status === "complete") return { progress: current, stepCompletedNow: false, onboardingCompletedNow: false };
   if (current.currentStepId !== step.id) throw new Error("Complete the current onboarding step before continuing.");
   validateStepAnswers(step, input.answers);
@@ -115,9 +102,7 @@ export function completeOnboardingStep(
   const acceptedAgreementVersions = { ...current.acceptedAgreementVersions };
   if (step.agreement) {
     const alreadyAccepted = acceptedAgreementVersions[step.agreement.id] === step.agreement.version;
-    if (step.agreement.required && !alreadyAccepted && input.agreementAccepted !== true) {
-      throw new Error(`${step.agreement.label} must be accepted to continue.`);
-    }
+    if (step.agreement.required && !alreadyAccepted && input.agreementAccepted !== true) throw new Error(`${step.agreement.label} must be accepted to continue.`);
     if (input.agreementAccepted === true) acceptedAgreementVersions[step.agreement.id] = step.agreement.version;
   }
 
@@ -140,7 +125,6 @@ export function completeOnboardingStep(
     lastActivityAt: now,
   };
   delete progress.abandonedAt;
-
   const next = firstIncompleteStep(definition, progress);
   if (next) {
     progress.steps[next.id] = "current";
@@ -150,12 +134,7 @@ export function completeOnboardingStep(
     delete progress.currentStepId;
     progress.completedAt = current.completedAt ?? now;
   }
-
-  return {
-    progress,
-    stepCompletedNow: true,
-    onboardingCompletedNow: progress.status === "complete" && current.status !== "complete",
-  };
+  return { progress, stepCompletedNow: true, onboardingCompletedNow: progress.status === "complete" && current.status !== "complete" };
 }
 
 export function resumeOnboardingProgress(current: OnboardingProgressV2, now: string): OnboardingProgressV2 {
@@ -174,10 +153,7 @@ export function inferOnboardingAbandonment(current: OnboardingProgressV2, now: s
   return { ...current, status: "abandoned", abandonedAt: now, lastActivityAt: now };
 }
 
-/**
- * Non-destructive R1 migration. The caller must choose one explicit organization/customer scope;
- * this helper never fans identity-level completion out to every organization.
- */
+/** Non-destructive R1 migration into one explicitly selected tenant scope. */
 export function migrateLegacyIdentityOnboarding(
   legacy: LegacyIdentityOnboardingState,
   scope: OnboardingProgressScope,
@@ -194,7 +170,6 @@ export function migrateLegacyIdentityOnboarding(
     sourceDefinitionVersion: legacy.definitionVersion,
     migratedAt: now,
   };
-
   for (const step of definition.steps) {
     if (legacy.steps[step.id] !== "complete") continue;
     if (step.agreement) {
@@ -204,11 +179,8 @@ export function migrateLegacyIdentityOnboarding(
     }
     progress.steps[step.id] = "complete";
   }
-
   const next = firstIncompleteStep(definition, progress);
-  for (const step of definition.steps) {
-    if (progress.steps[step.id] === "current") progress.steps[step.id] = "not-started";
-  }
+  for (const step of definition.steps) if (progress.steps[step.id] === "current") progress.steps[step.id] = "not-started";
   if (next) {
     progress.steps[next.id] = "current";
     progress.currentStepId = next.id;
