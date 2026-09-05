@@ -2,10 +2,81 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Release 2 authoritative persistence is server-mediated. Firebase Admin
-    // SDK operations in trusted Cloud Functions bypass these rules; browser
-    // clients never receive direct mutation authority for customer, lifecycle,
-    // billing, communication, automation, audit, or control records.
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function ownsIdentity(identityId) {
+      return signedIn() && request.auth.uid == identityId;
+    }
+
+    function stableCustomerId(identityId) {
+      return 'customer_' + identityId;
+    }
+
+    function validIdentityCustomerCreate(identityId) {
+      return ownsIdentity(identityId)
+        && request.resource.data.identityId == identityId
+        && request.resource.data.customerId == stableCustomerId(identityId)
+        && request.resource.data.status == 'active'
+        && request.resource.data.email == request.auth.token.email;
+    }
+
+    function validIdentityCustomerUpdate(identityId) {
+      return ownsIdentity(identityId)
+        && request.resource.data.identityId == resource.data.identityId
+        && request.resource.data.customerId == resource.data.customerId
+        && request.resource.data.status == resource.data.status
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.identityId == identityId
+        && request.resource.data.customerId == stableCustomerId(identityId)
+        && request.resource.data.email == request.auth.token.email;
+    }
+
+    function validIdentityLead(identityId) {
+      return ownsIdentity(identityId)
+        && request.resource.data.identityId == identityId
+        && (!('customerId' in request.resource.data)
+          || request.resource.data.customerId == stableCustomerId(identityId));
+    }
+
+    function validIdentityOnboarding(identityId) {
+      return ownsIdentity(identityId)
+        && request.resource.data.identityId == identityId
+        && request.resource.data.customerId == stableCustomerId(identityId);
+    }
+
+    // Release 1 identity bootstrap is the only browser-writable Firestore surface.
+    // All organization/customer lifecycle authority is resolved through Functions.
+    match /identityCustomers/{identityId} {
+      allow read: if ownsIdentity(identityId);
+      allow create: if validIdentityCustomerCreate(identityId);
+      allow update: if validIdentityCustomerUpdate(identityId);
+      allow delete: if false;
+    }
+
+    match /identityLeadCandidates/{identityId} {
+      allow read: if ownsIdentity(identityId);
+      allow create, update: if validIdentityLead(identityId);
+      allow delete: if false;
+    }
+
+    match /identityOnboarding/{identityId} {
+      allow read: if ownsIdentity(identityId);
+      allow create, update: if validIdentityOnboarding(identityId);
+      allow delete: if false;
+    }
+
+    // Organization records include memberships, Customers, consent, configuration,
+    // lifecycle events/projections, automation runtime, communications, billing and
+    // audits. Admin SDK callers are authorized server-side and are not governed by
+    // these client rules; browser clients receive no direct access.
+    match /organizations/{organizationId}/{document=**} {
+      allow read, write: if false;
+    }
+
+    // Provider/event dedupe, platform pause/admission and other trusted global
+    // collections are never browser-readable or browser-writable.
     match /{document=**} {
       allow read, write: if false;
     }

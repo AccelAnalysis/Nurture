@@ -15,9 +15,12 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "preview": "vite preview",
-    "firebase:emulate": "npx -y firebase-tools@latest emulators:start --only hosting",
+    "firebase:emulate": "npx -y firebase-tools@latest emulators:start --only auth,firestore,hosting",
     "firebase:preview": "npm run build && npx -y firebase-tools@latest hosting:channel:deploy bootstrap --project nurture-12398 --expires 7d",
     "firebase:deploy": "npm run build && npx -y firebase-tools@latest deploy --only hosting --project nurture-12398",
+    "test:firestore-rules": "npx -y firebase-tools@latest emulators:exec --project nurture-12398 --only auth,firestore \"node scripts/verify-firestore-rules.mjs\"",
+    "test:firestore-backend": "npm --prefix functions run build && npx -y firebase-tools@latest emulators:exec --project nurture-12398 --only firestore \"node functions/scripts/verify-firestore-backend.mjs\"",
+    "test:firestore-acceptance": "npm --prefix functions run build && npx -y firebase-tools@latest emulators:exec --project nurture-12398 --only auth,firestore \"node scripts/verify-firestore-rules.mjs && node functions/scripts/verify-firestore-backend.mjs\"",
     "test:experience": "node scripts/verify-experience-entitlements.mjs",
     "test:browser": "node scripts/verify-release-browser.mjs"
   },

@@ -1,29 +1,47 @@
 {
   "indexes": [
     {
+      "collectionGroup": "customers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "identityId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "communicationConsents",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "subjectKind", "order": "ASCENDING" },
+        { "fieldPath": "subjectId", "order": "ASCENDING" },
+        { "fieldPath": "dataMode", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "lifecycleEvents",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "customerId", "order": "ASCENDING" },
+        { "fieldPath": "dataMode", "order": "ASCENDING" },
+        { "fieldPath": "occurredAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "lifecycleEvents",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "subjectKind", "order": "ASCENDING" },
+        { "fieldPath": "subjectId", "order": "ASCENDING" },
+        { "fieldPath": "dataMode", "order": "ASCENDING" },
+        { "fieldPath": "occurredAt", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "lifecycleProjections",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "organizationId", "order": "ASCENDING" },
         { "fieldPath": "dataMode", "order": "ASCENDING" },
-        { "fieldPath": "customerId", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "acquisitionDefinitions",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "organizationId", "order": "ASCENDING" },
-        { "fieldPath": "triggerEventType", "order": "ASCENDING" },
-        { "fieldPath": "enabled", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "acquisitionJobs",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "dueAt", "order": "ASCENDING" }
+        { "fieldPath": "updatedAt", "order": "DESCENDING" }
       ]
     },
     {
@@ -37,20 +55,43 @@
     },
     {
       "collectionGroup": "acquisitionJobs",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "dataMode", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "dueAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "acquisitionJobs",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "organizationId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "dueAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "acquisitionJobs",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "dueAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "acquisitionJobs",
+      "queryScope": "COLLECTION",
+      "fields": [
         { "fieldPath": "subjectId", "order": "ASCENDING" },
         { "fieldPath": "dataMode", "order": "ASCENDING" },
-        { "fieldPath": "providerPurpose", "order": "ASCENDING" },
-        { "fieldPath": "providerSubmissionStartedAt", "order": "ASCENDING" }
+        { "fieldPath": "frequencyPurpose", "order": "ASCENDING" },
+        { "fieldPath": "providerSubmissionStartedAt", "order": "DESCENDING" }
       ]
     },
     {
       "collectionGroup": "acquisitionJobs",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "organizationId", "order": "ASCENDING" },
         { "fieldPath": "subjectId", "order": "ASCENDING" },
         { "fieldPath": "dataMode", "order": "ASCENDING" },
         { "fieldPath": "status", "order": "ASCENDING" }
@@ -60,13 +101,51 @@
       "collectionGroup": "acquisitionJobs",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "organizationId", "order": "ASCENDING" },
         { "fieldPath": "subjectId", "order": "ASCENDING" },
         { "fieldPath": "dataMode", "order": "ASCENDING" },
         { "fieldPath": "automationId", "order": "ASCENDING" },
         { "fieldPath": "status", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "communicationMessages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "recipientKey", "order": "ASCENDING" },
+        { "fieldPath": "intent.createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "onboardingProgress",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "scope.customerId", "order": "ASCENDING" },
+        { "fieldPath": "scope.dataMode", "order": "ASCENDING" }
+      ]
     }
   ],
-  "fieldOverrides": []
+  "fieldOverrides": [
+    {
+      "collectionGroup": "acquisitionJobs",
+      "fieldPath": "jobId",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    },
+    {
+      "collectionGroup": "acquisitionJobs",
+      "fieldPath": "dataMode",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" },
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    },
+    {
+      "collectionGroup": "acquisitionEnrollments",
+      "fieldPath": "enrollmentId",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    }
+  ]
 }
