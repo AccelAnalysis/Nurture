@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Badge, Button, Card, DataTable, EmptyState, ErrorState, Input, LoadingState, PageHeader, Select } from "../../components/ui";
 import { Link } from "../../router";
 import {
@@ -118,20 +118,29 @@ export function CustomerWorkspaceListPage({ organizationId }: { organizationId: 
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
+  const pageScopeRef = useRef(organizationId);
 
   useEffect(() => {
     let active = true;
+    const scopeChanged = pageScopeRef.current !== organizationId;
+    if (scopeChanged) {
+      pageScopeRef.current = organizationId;
+      setCursor(undefined);
+      setCursorHistory([]);
+      setNextCursor(undefined);
+    }
+    const requestCursor = scopeChanged ? undefined : cursor;
     setState("loading");
     setError("");
-    void customerWorkspacePort.listCustomers({ organizationId, query, filters, cursor, limit: CUSTOMER_WORKSPACE_PAGE_SIZE })
+    void customerWorkspacePort.listCustomers({ organizationId, query, filters, cursor: requestCursor, limit: CUSTOMER_WORKSPACE_PAGE_SIZE })
       .then((page) => {
-        if (!active) return;
+        if (!active || pageScopeRef.current !== organizationId) return;
         setItems(page.items);
         setNextCursor(page.nextCursor);
         setState("ready");
       })
       .catch((cause: unknown) => {
-        if (!active) return;
+        if (!active || pageScopeRef.current !== organizationId) return;
         setItems([]);
         setNextCursor(undefined);
         setError(cause instanceof Error ? cause.message : "Customer lifecycle data could not be loaded.");
@@ -223,16 +232,26 @@ function CustomerTimeline({ organizationId, customerId }: { organizationId: stri
   const [nextCursor, setNextCursor] = useState<string | undefined>();
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState("");
+  const scopeKey = `${organizationId}:${customerId}`;
+  const pageScopeRef = useRef(scopeKey);
 
   useEffect(() => {
     let active = true;
+    const scopeChanged = pageScopeRef.current !== scopeKey;
+    if (scopeChanged) {
+      pageScopeRef.current = scopeKey;
+      setCursor(undefined);
+      setCursorHistory([]);
+      setNextCursor(undefined);
+    }
+    const requestCursor = scopeChanged ? undefined : cursor;
     setState("loading");
     setError("");
-    void customerWorkspacePort.queryTimeline({ organizationId, customerId, category, cursor, limit: 20 })
-      .then((page) => { if (!active) return; setItems(page.items); setNextCursor(page.nextCursor); setState("ready"); })
-      .catch((cause: unknown) => { if (!active) return; setItems([]); setNextCursor(undefined); setError(cause instanceof Error ? cause.message : "Customer timeline could not be loaded."); setState("error"); });
+    void customerWorkspacePort.queryTimeline({ organizationId, customerId, category, cursor: requestCursor, limit: 20 })
+      .then((page) => { if (!active || pageScopeRef.current !== scopeKey) return; setItems(page.items); setNextCursor(page.nextCursor); setState("ready"); })
+      .catch((cause: unknown) => { if (!active || pageScopeRef.current !== scopeKey) return; setItems([]); setNextCursor(undefined); setError(cause instanceof Error ? cause.message : "Customer timeline could not be loaded."); setState("error"); });
     return () => { active = false; };
-  }, [category, cursor, customerId, organizationId]);
+  }, [category, cursor, customerId, organizationId, scopeKey]);
 
   const changeCategory = (next: CustomerTimelineCategory) => { setCategory(next); setCursor(undefined); setCursorHistory([]); };
   return (
