@@ -24,7 +24,7 @@ jobs:
       VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.VITE_FIREBASE_MESSAGING_SENDER_ID }}
       VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
       VITE_FIREBASE_MEASUREMENT_ID: ${{ vars.VITE_FIREBASE_MEASUREMENT_ID }}
-      # Deliberately closed until docs/product/release-1-finisher.md acceptance gates pass.
+      # Deliberately closed until the outstanding backend acceptance gates pass.
       VITE_RELEASE1_BACKEND_READY: 'false'
       VITE_ENABLE_DEMO: 'false'
     steps:
@@ -43,7 +43,7 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run test:browser
       - name: Record exact Hosting build provenance
-        run: node -e "require('fs').writeFileSync('dist/release.json', JSON.stringify({commit:process.env.GITHUB_SHA,release:'1-integration',backendActivated:false})+'\n')"
+        run: node -e "require('fs').writeFileSync('dist/release.json', JSON.stringify({commit:process.env.GITHUB_SHA,release:'2-integration',backendActivated:false})+'\n')"
       - uses: actions/upload-artifact@v4
         with:
           name: verified-hosting-build
@@ -53,7 +53,7 @@ jobs:
         if: always()
         with:
           name: hosting-predeploy-browser-evidence
-          path: test-results/release-1
+          path: test-results/release-2
           if-no-files-found: ignore
 
   deploy:
@@ -99,14 +99,14 @@ jobs:
           SITE_URL: ${{ matrix.site.url }}
         run: |
           curl --fail --silent --show-error --retry 4 "$SITE_URL/release.json" -o /tmp/release.json
-          node -e "const r=require('/tmp/release.json');if(r.commit!==process.env.GITHUB_SHA||r.backendActivated!==false)throw Error('Unexpected deployed release');console.log(r)"
+          node -e "const r=require('/tmp/release.json');if(r.commit!==process.env.GITHUB_SHA||r.release!=='2-integration'||r.backendActivated!==false)throw Error('Unexpected deployed release');console.log(r)"
       - name: Browser smoke test live Hosting
         env:
-          R1_SMOKE_BASE_URL: ${{ matrix.site.url }}
+          RELEASE_SMOKE_BASE_URL: ${{ matrix.site.url }}
         run: npm run test:browser
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: live-browser-${{ matrix.site.name }}
-          path: test-results/release-1
+          path: test-results/release-2
           if-no-files-found: ignore

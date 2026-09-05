@@ -37,6 +37,19 @@ export interface OrganizationCustomerBindingPort {
     identityId: string;
     correlationId: string;
   }): Promise<OrganizationCustomerBindingResult>;
+
+  /**
+   * Optional direct customer lookup used only by trusted server/provider routes
+   * that already possess a canonical customer identifier but no browser identity.
+   * Callers must fail closed when this capability is unavailable. Implementations
+   * must resolve the Customer underneath the supplied organization and never by
+   * email, global profile ID, or an untrusted tenant hint.
+   */
+  resolveCustomer?(input: {
+    organizationId: string;
+    customerId: string;
+    correlationId: string;
+  }): Promise<OrganizationCustomerBindingResult>;
 }
 
 export function bindingMatchesScope(

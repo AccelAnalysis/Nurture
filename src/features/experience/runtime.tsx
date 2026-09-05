@@ -10,6 +10,8 @@ import type {
   ExperienceEntitlementSource,
   ExperienceEventSink,
   ExperienceLifecycleEvent,
+  ExperienceMilestoneResult,
+  ExperienceMilestoneSource,
   ExperienceOnboardingBridge,
   ExperienceOnboardingResult,
   ExperienceOrganizationSource,
@@ -51,6 +53,15 @@ const browserEventSink: ExperienceEventSink = {
   },
 };
 
+const unavailableMilestoneSource: ExperienceMilestoneSource = {
+  async record(): Promise<ExperienceMilestoneResult> {
+    return {
+      status: "unavailable",
+      reason: "Trusted Experience milestone validation has not been connected at the server composition boundary.",
+    };
+  },
+};
+
 const unavailableOnboardingBridge: ExperienceOnboardingBridge = {
   async completeStep(): Promise<ExperienceOnboardingResult> {
     return {
@@ -79,6 +90,11 @@ export interface ExperienceRuntimeValue {
   operationSource: ExperienceOperationSource;
   /** Track F/lifecycle sink. Default emits a browser event only. */
   eventSink: ExperienceEventSink;
+  /**
+   * Track B client command boundary backed by E binding and F validated append
+   * on the server. Default stays unavailable rather than trusting browser proof.
+   */
+  milestoneSource: ExperienceMilestoneSource;
   /** Track C bridge. Default reports unavailable rather than inventing completion. */
   onboardingBridge: ExperienceOnboardingBridge;
   /** Track E diagnostics boundary. Default emits only safe browser diagnostics. */
@@ -92,6 +108,7 @@ const defaultRuntime: ExperienceRuntimeValue = {
   entitlementSource: unavailableEntitlementSource,
   operationSource: unavailableOperations,
   eventSink: browserEventSink,
+  milestoneSource: unavailableMilestoneSource,
   onboardingBridge: unavailableOnboardingBridge,
   recoverableErrorReporter: browserRecoverableErrorReporter,
 };
@@ -99,9 +116,9 @@ const defaultRuntime: ExperienceRuntimeValue = {
 const ExperienceRuntimeContext = createContext<ExperienceRuntimeValue>(defaultRuntime);
 
 /**
- * Composition point shared across Release 1 tracks. Track B supplies safe
- * defaults so another owner can inject its authoritative adapter without
- * changing Experience module code or teaching modules about Firebase/Stripe.
+ * Composition point shared across tracks. Track B supplies safe defaults so
+ * authoritative adapters can be injected without changing Experience module
+ * code or teaching modules about Firebase, lifecycle persistence, or billing.
  */
 export function ExperienceRuntimeProvider({
   children,
@@ -111,6 +128,7 @@ export function ExperienceRuntimeProvider({
   entitlementSource = unavailableEntitlementSource,
   operationSource = unavailableOperations,
   eventSink = browserEventSink,
+  milestoneSource = unavailableMilestoneSource,
   onboardingBridge = unavailableOnboardingBridge,
   recoverableErrorReporter = browserRecoverableErrorReporter,
 }: {
@@ -121,6 +139,7 @@ export function ExperienceRuntimeProvider({
   entitlementSource?: ExperienceEntitlementSource;
   operationSource?: ExperienceOperationSource;
   eventSink?: ExperienceEventSink;
+  milestoneSource?: ExperienceMilestoneSource;
   onboardingBridge?: ExperienceOnboardingBridge;
   recoverableErrorReporter?: ExperienceRecoverableErrorReporter;
 }) {
@@ -131,9 +150,10 @@ export function ExperienceRuntimeProvider({
     entitlementSource,
     operationSource,
     eventSink,
+    milestoneSource,
     onboardingBridge,
     recoverableErrorReporter,
-  }), [organizationSource, definitionSource, customerSource, entitlementSource, operationSource, eventSink, onboardingBridge, recoverableErrorReporter]);
+  }), [organizationSource, definitionSource, customerSource, entitlementSource, operationSource, eventSink, milestoneSource, onboardingBridge, recoverableErrorReporter]);
   return <ExperienceRuntimeContext.Provider value={value}>{children}</ExperienceRuntimeContext.Provider>;
 }
 

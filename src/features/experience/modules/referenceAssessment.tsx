@@ -1,27 +1,20 @@
 import { useState } from "react";
 import { REFERENCE_ASSESSMENT_CAPABILITIES } from "../../../../shared/experience/reference-capabilities";
+import {
+  REFERENCE_ASSESSMENT_MILESTONE_KEY,
+  REFERENCE_ASSESSMENT_QUESTIONS,
+  referenceAssessmentEvidence,
+} from "../../../../shared/experience/reference-lifecycle";
 import { Badge, Button, Card } from "../../../components/ui";
 import type { ExperienceMediaAsset, ExperienceModule, ExperienceModuleRenderContext } from "../contracts";
 
-const PROGRESS_KEY = "nurture:reference-assessment:progress:v1";
+const PROGRESS_KEY = "nurture:reference-assessment:progress:v2";
 
-const questions = [
-  {
-    id: "clarity",
-    prompt: "How clear does your next step feel right now?",
-    options: ["Very clear", "Mostly clear", "Still forming"],
-  },
-  {
-    id: "momentum",
-    prompt: "How much momentum do you feel toward that next step?",
-    options: ["Strong momentum", "Some momentum", "I need a reset"],
-  },
-  {
-    id: "support",
-    prompt: "Which kind of support would be most useful next?",
-    options: ["A focused prompt", "A practical example", "Time to reflect"],
-  },
-] as const;
+type ReferenceAnswers = Record<string, string>;
+interface ReferenceProgress {
+  step: number;
+  answers: ReferenceAnswers;
+}
 
 const referenceMedia: ExperienceMediaAsset[] = [
   {
@@ -44,44 +37,84 @@ const referenceMedia: ExperienceMediaAsset[] = [
   },
 ];
 
-function readProgress(key: string) {
-  if (typeof window === "undefined") return 0;
-  const raw = sessionStorage.getItem(key);
-  if (!raw) return 0;
-  const parsed = Number(raw);
-  return Number.isInteger(parsed) && parsed >= 0 && parsed <= questions.length ? parsed : 0;
+function emptyProgress(): ReferenceProgress {
+  return { step: 0, answers: {} };
 }
 
-function persistProgress(key: string, step: number) {
-  if (typeof window !== "undefined") sessionStorage.setItem(key, String(step));
+function readProgress(key: string): ReferenceProgress {
+  if (typeof window === "undefined") return emptyProgress();
+  try {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return emptyProgress();
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return emptyProgress();
+    const record = parsed as Record<string, unknown>;
+    const step = typeof record.step === "number" && Number.isInteger(record.step)
+      ? record.step
+      : 0;
+    const rawAnswers = record.answers;
+    const answers: ReferenceAnswers = {};
+    if (rawAnswers && typeof rawAnswers === "object" && !Array.isArray(rawAnswers)) {
+      for (const [questionId, optionId] of Object.entries(rawAnswers as Record<string, unknown>)) {
+        if (typeof optionId === "string") answers[questionId] = optionId;
+      }
+    }
+    return {
+      step: Math.max(0, Math.min(step, REFERENCE_ASSESSMENT_QUESTIONS.length)),
+      answers,
+    };
+  } catch {
+    return emptyProgress();
+  }
+}
+
+function persistProgress(key: string, progress: ReferenceProgress) {
+  if (typeof window !== "undefined") sessionStorage.setItem(key, JSON.stringify(progress));
+}
+
+function completionActionId(context: ExperienceModuleRenderContext) {
+  const subject = context.customerId ?? context.identityId ?? "public-session";
+  return `reference-assessment-completed:${context.experience.id}:${subject}:v1`;
 }
 
 function Assessment({ context }: { context: ExperienceModuleRenderContext }) {
   const progressKey = `${PROGRESS_KEY}:${context.experience.id}:${context.identityId ?? "public"}`;
-  const [step, setStep] = useState(() => readProgress(progressKey));
-  const complete = step >= questions.length;
+  const [progress, setProgress] = useState<ReferenceProgress>(() => readProgress(progressKey));
+  const complete = progress.step >= REFERENCE_ASSESSMENT_QUESTIONS.length;
   const title = typeof context.configuration.title === "string" ? context.configuration.title : "Momentum Check";
   const completionMessage = typeof context.configuration.completionMessage === "string"
     ? context.configuration.completionMessage
     : "You have a clearer signal for what to do next.";
 
-  const choose = (questionId: string) => {
-    const next = Math.min(step + 1, questions.length);
+  const choose = (questionId: string, optionId: string) => {
+    const nextAnswers = { ...progress.answers, [questionId]: optionId };
+    const nextStep = Math.min(progress.step + 1, REFERENCE_ASSESSMENT_QUESTIONS.length);
+    const next = { step: nextStep, answers: nextAnswers };
     persistProgress(progressKey, next);
-    setStep(next);
-    context.submitEvent("experience.reference-assessment.answer_selected", { questionId, step: next });
-    if (next === questions.length) {
+    setProgress(next);
+    context.submitEvent("experience.reference-assessment.answer_selected", { questionId, step: nextStep });
+    if (nextStep === REFERENCE_ASSESSMENT_QUESTIONS.length) {
+      const actionId = completionActionId(context);
       context.submitEvent(
         "experience.reference-assessment.completed",
-        { completedQuestions: questions.length },
-        `reference-assessment-completed-${context.experience.id}`,
+        { completedQuestions: REFERENCE_ASSESSMENT_QUESTIONS.length },
+        actionId,
+      );
+      // This is a command request, not a trusted event. The server re-binds the
+      // customer and validates the complete answer set before emitting the
+      // global `experience.milestone_reached` event.
+      void context.reachMilestone(
+        REFERENCE_ASSESSMENT_MILESTONE_KEY,
+        actionId,
+        referenceAssessmentEvidence(nextAnswers),
       );
     }
   };
 
   const restart = () => {
-    persistProgress(progressKey, 0);
-    setStep(0);
+    const next = emptyProgress();
+    persistProgress(progressKey, next);
+    setProgress(next);
   };
 
   if (complete) {
@@ -91,8 +124,8 @@ function Assessment({ context }: { context: ExperienceModuleRenderContext }) {
           <Badge tone="positive">Complete</Badge>
           <h2>{completionMessage}</h2>
           <p>
-            This reference module keeps only browser-session progress. It demonstrates the Experience boundary without
-            turning Nurture into a permanent assessment product.
+            This reference module keeps only browser-session progress. Completion is a browser signal until the
+            trusted domain validator accepts it as a customer milestone.
           </p>
           <div className="hero-actions">
             {context.accessMode === "authenticated"
@@ -115,21 +148,21 @@ function Assessment({ context }: { context: ExperienceModuleRenderContext }) {
     );
   }
 
-  const question = questions[step];
+  const question = REFERENCE_ASSESSMENT_QUESTIONS[progress.step];
   return (
     <Card className="reference-assessment-card">
       <div className="experience-progress">
-        <span>Question {step + 1} of {questions.length}</span>
-        <progress max={questions.length} value={step + 1} />
+        <span>Question {progress.step + 1} of {REFERENCE_ASSESSMENT_QUESTIONS.length}</span>
+        <progress max={REFERENCE_ASSESSMENT_QUESTIONS.length} value={progress.step + 1} />
       </div>
       <p className="eyebrow">{title}</p>
       <h2>{question.prompt}</h2>
       <div className="experience-answer-grid">
         {question.options.map((option) => (
-          <Button key={option} className="button-secondary" onClick={() => choose(question.id)}>{option}</Button>
+          <Button key={option.id} className="button-secondary" onClick={() => choose(question.id, option.id)}>{option.label}</Button>
         ))}
       </div>
-      <p className="muted">Answer choices stay inside this browser fixture; lifecycle instrumentation records only the question identifier and progress step.</p>
+      <p className="muted">Lifecycle activity records only the question identifier and progress step; answer selections are used only as short-lived evidence for the owning domain validator.</p>
     </Card>
   );
 }
@@ -141,7 +174,7 @@ function Review({ context }: { context: ExperienceModuleRenderContext }) {
       <Card>
         <Badge tone="accent">Authenticated capability</Badge>
         <h2>Your review</h2>
-        <p>{progress >= questions.length ? "The public/trial check is complete in this browser." : `You reached ${progress} of ${questions.length} questions in this browser.`}</p>
+        <p>{progress.step >= REFERENCE_ASSESSMENT_QUESTIONS.length ? "The public/trial check is complete in this browser." : `You reached ${progress.step} of ${REFERENCE_ASSESSMENT_QUESTIONS.length} questions in this browser.`}</p>
         <p className="muted">A future persisted module record can live behind the module's organization/customer data contract without changing authentication or billing.</p>
       </Card>
       <Card>
@@ -176,7 +209,7 @@ export const referenceAssessmentModule: ExperienceModule = {
   manifest: {
     id: "nurture.reference-assessment",
     version: "1.0.0",
-    contractVersion: "1.0.0",
+    contractVersion: "1.1.0",
     name: "Momentum Check",
     description: "A deliberately small reference Experience proving trial, authenticated, entitlement, media, routing, and lifecycle boundaries.",
     icon: "/brand/logo/nurture-n.svg",
@@ -223,13 +256,41 @@ export const referenceAssessmentModule: ExperienceModule = {
     eventDefinitions: [
       {
         name: "experience.reference-assessment.answer_selected",
-        description: "Browser-observed progress through the reference interaction.",
+        description: "Browser-observed ordinary progress through the reference interaction.",
         source: "browser",
+        schemaVersion: 1,
+        maxPayloadBytes: 512,
+        payloadSchema: {
+          questionId: {
+            type: "string",
+            required: true,
+            maxLength: 40,
+            allowedValues: REFERENCE_ASSESSMENT_QUESTIONS.map((question) => question.id),
+          },
+          step: {
+            type: "number",
+            required: true,
+            integer: true,
+            min: 1,
+            max: REFERENCE_ASSESSMENT_QUESTIONS.length,
+          },
+        },
       },
       {
         name: "experience.reference-assessment.completed",
-        description: "Browser-observed completion; any shared verified milestone requires trusted validation.",
+        description: "Browser-observed completion candidate; shared activation requires the trusted domain validator.",
         source: "browser",
+        schemaVersion: 1,
+        maxPayloadBytes: 256,
+        payloadSchema: {
+          completedQuestions: {
+            type: "number",
+            required: true,
+            integer: true,
+            min: REFERENCE_ASSESSMENT_QUESTIONS.length,
+            max: REFERENCE_ASSESSMENT_QUESTIONS.length,
+          },
+        },
         requiresServerValidation: true,
       },
     ],
@@ -237,12 +298,17 @@ export const referenceAssessmentModule: ExperienceModule = {
     onboardingRequirements: [],
     activityDefinition: {
       meaningfulEvent: "experience.reference-assessment.completed",
-      description: "Completion of all reference questions is meaningful use; opening the page is not.",
+      description: "Completing all reference questions is the first meaningful-use candidate; opening the page is only `experience.started` and is not activation.",
       pageViewCountsAsActivity: false,
+      activation: {
+        moduleEvent: "experience.reference-assessment.completed",
+        milestoneKey: REFERENCE_ASSESSMENT_MILESTONE_KEY,
+        verification: "trusted-domain-action",
+      },
     },
     dataContract: {
       scope: "session-only",
-      retention: "Reference progress is stored only for the current browser session.",
+      retention: "Reference progress and candidate evidence are stored only for the current browser session.",
       export: "No durable module record is created by this fixture.",
       migration: "Versioned session keys prevent incompatible progress from being reinterpreted.",
     },

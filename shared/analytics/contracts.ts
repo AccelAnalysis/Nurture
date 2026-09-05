@@ -142,6 +142,51 @@ export const EVENT_CATALOG = {
     allowedSources: ["scheduler", "trusted_server"] as const,
     family: "experience",
   },
+  "communication.provider_accepted": {
+    owner: "D",
+    allowedSources: ["trusted_server"] as const,
+    family: "communications",
+  },
+  "communication.delivered": {
+    owner: "D",
+    allowedSources: ["provider_webhook", "trusted_server"] as const,
+    family: "communications",
+  },
+  "communication.bounced": {
+    owner: "D",
+    allowedSources: ["provider_webhook", "trusted_server"] as const,
+    family: "communications",
+  },
+  "communication.dropped": {
+    owner: "D",
+    allowedSources: ["provider_webhook", "trusted_server"] as const,
+    family: "communications",
+  },
+  "communication.complained": {
+    owner: "D",
+    allowedSources: ["provider_webhook", "trusted_server"] as const,
+    family: "communications",
+  },
+  "communication.unsubscribed": {
+    owner: "D",
+    allowedSources: ["provider_webhook", "domain_action", "trusted_server"] as const,
+    family: "communications",
+  },
+  "communication.suppressed": {
+    owner: "D",
+    allowedSources: ["trusted_server"] as const,
+    family: "communications",
+  },
+  "communication.failed": {
+    owner: "D",
+    allowedSources: ["provider_webhook", "trusted_server"] as const,
+    family: "communications",
+  },
+  "communication.outcome_unknown": {
+    owner: "D",
+    allowedSources: ["trusted_server"] as const,
+    family: "communications",
+  },
   "survey.completed": {
     owner: "future",
     allowedSources: ["domain_action", "trusted_server"] as const,

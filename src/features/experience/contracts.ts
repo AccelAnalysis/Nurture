@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { AnalyticsEventType, ExperienceModuleEventType } from "../../../shared/analytics/contracts";
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
@@ -104,10 +105,29 @@ export interface ExperienceConfigurationField {
   required?: boolean;
 }
 
+export interface ExperienceEventPayloadField {
+  type: "string" | "number" | "boolean";
+  required?: boolean;
+  maxLength?: number;
+  integer?: boolean;
+  min?: number;
+  max?: number;
+  allowedValues?: readonly (string | number | boolean)[];
+}
+
+/**
+ * Developer-owned declaration for a module event. This is configuration data,
+ * not executable validation code. The host applies the bounded validator in
+ * `events.ts` before the event reaches Track F's lifecycle submission boundary.
+ */
 export interface ExperienceEventDefinition {
-  name: string;
+  name: ExperienceModuleEventType;
   description: string;
-  source: "browser" | "server";
+  source: "browser" | "domain_action";
+  schemaVersion: 1;
+  payloadSchema: Record<string, ExperienceEventPayloadField>;
+  /** Per-event cap; may only narrow Track F's canonical global payload cap. */
+  maxPayloadBytes?: number;
   requiresServerValidation?: boolean;
 }
 
@@ -130,9 +150,16 @@ export interface ExperienceOnboardingRequirement {
 }
 
 export interface ExperienceActivityDefinition {
-  meaningfulEvent: string;
+  meaningfulEvent: ExperienceModuleEventType;
   description: string;
   pageViewCountsAsActivity: false;
+  activation: {
+    /** Browser/domain event that indicates a candidate first meaningful use. */
+    moduleEvent: ExperienceModuleEventType;
+    /** Stable domain milestone key emitted globally only after trusted validation. */
+    milestoneKey: string;
+    verification: "trusted-domain-action";
+  };
 }
 
 export interface ExperienceDataContract {
@@ -195,9 +222,10 @@ export interface ExperienceVideoAsset {
 
 export type ExperienceMediaAsset = ExperienceImageAsset | ExperienceVideoAsset;
 
+/** Browser-observed Experience signal. Tenant/customer values are hints only. */
 export interface ExperienceLifecycleEvent {
   eventId: string;
-  eventType: string;
+  eventType: AnalyticsEventType;
   occurredAt: string;
   source: "experience-browser";
   trust: "browser-observed";
@@ -271,6 +299,30 @@ export interface ExperienceEventSink {
   submit(event: ExperienceLifecycleEvent): void | Promise<void>;
 }
 
+/**
+ * Browser-side request for a trusted milestone. Organization/customer/identity
+ * authority is deliberately absent; the server adapter must derive identity
+ * from authenticated request state and re-bind the organization through Track E.
+ */
+export interface ExperienceMilestoneRequest {
+  organizationId: string;
+  experienceId: string;
+  moduleId: string;
+  moduleVersion: string;
+  milestoneKey: string;
+  actionId: string;
+  evidence: JsonObject;
+}
+
+export type ExperienceMilestoneResult =
+  | { status: "accepted"; eventId?: string }
+  | { status: "duplicate"; eventId?: string }
+  | { status: "unavailable"; reason: string };
+
+export interface ExperienceMilestoneSource {
+  record(request: ExperienceMilestoneRequest): Promise<ExperienceMilestoneResult>;
+}
+
 /** Track C integration: modules describe needs; the host onboarding framework owns completion. */
 export type ExperienceOnboardingResult =
   | { status: "accepted" }
@@ -310,7 +362,12 @@ export interface ExperienceModuleRenderContext {
   canUse: (capabilityKey: string) => ExperienceCapabilityDecision;
   requestRegistration: (returnPath?: string) => void;
   requestUpgrade: (capabilityKey: string) => void;
-  submitEvent: (name: string, properties?: JsonObject, idempotencyKey?: string) => boolean;
+  submitEvent: (name: ExperienceModuleEventType, properties?: JsonObject, idempotencyKey?: string) => boolean;
+  /**
+   * Requests a global milestone through the trusted server adapter. The module's
+   * evidence is only a candidate; the owning server validator must accept it.
+   */
+  reachMilestone: (milestoneKey: string, actionId: string, evidence: JsonObject) => Promise<ExperienceMilestoneResult>;
   completeOnboardingStep: (stepId: string, result: JsonObject) => Promise<ExperienceOnboardingResult>;
   runProtectedOperation: (operation: string) => Promise<JsonObject>;
   renderMedia: (asset: ExperienceMediaAsset) => ReactNode;

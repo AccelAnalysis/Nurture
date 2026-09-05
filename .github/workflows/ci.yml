@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - release/1-integration
+      - release/2-integration
 
 permissions:
   contents: read
@@ -62,6 +63,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: release-1-browser-evidence
-          path: test-results/release-1
+          name: release-2-browser-evidence
+          path: test-results/release-2
           if-no-files-found: ignore
