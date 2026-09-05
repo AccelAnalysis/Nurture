@@ -4,7 +4,7 @@
 **Primary product requirement:** NUR-25 (instrument early; richer analytics later)  
 **Related contracts:** NUR-13, NUR-33, LIFE-02, LIFE-10
 
-Track F is a lightweight cross-track instrumentation function. It defines the shared event vocabulary and contract used while Tracks A–E build the Release 1 vertical slice. It does **not** build the full analytics dashboard and it does not create a competing lifecycle engine.
+Track F is a lightweight cross-track instrumentation function. It defines the shared event vocabulary and contract used by Tracks A–E in the Release 1 vertical slice. It does **not** build the full analytics dashboard and it does not create a competing lifecycle engine.
 
 ## 1. Contract boundary
 
@@ -35,6 +35,8 @@ The common envelope contains:
 - bounded `payload`
 
 Payloads are JSON-only, capped at 16 KiB, reject non-finite numbers, and reject obvious secret-bearing keys. Do not put passwords, auth tokens, cookies, card data, service credentials, or unnecessary raw personal data in analytics payloads.
+
+`validateLifecycleEventEnvelope(...)` is the runtime convergence gate for already-materialized server events. It verifies event/schema/source compatibility, subject pairing, timestamps, data mode, required IDs, and payload safety before durable persistence or publication through Track E's event integration port.
 
 ## 2. Release 1 vocabulary and owner handoff
 
@@ -79,36 +81,57 @@ Namespaced events must match `experience.<module>.<event>` and remain declared b
 
 ### Track A — Configuration + Public Shell
 
-The existing public shell dispatches `nurture:public-analytics`, and the active Track A branch has evolved that hook to a dotted event envelope. Track F's compatibility bridge supports both forms:
+Track A dispatches `nurture:public-analytics` using the dotted Release 1 vocabulary, while the merged skeleton still contains the earlier underscore names. Track F's compatibility bridge supports both forms:
 
-- current skeleton underscore names such as `public_page_view`;
-- Track A dotted names such as `public.page_viewed`, `public.cta_selected`, and its more-specific public handoff signals.
+- skeleton names such as `public_page_view`;
+- Track A names such as `public.page_viewed`, `public.cta_selected`, and its more-specific public handoff signals.
 
-The bridge normalizes these into `public.page_viewed` and `public.cta_selected` and de-duplicates the current primary-CTA + handoff double dispatch. Track A therefore does not need to replace its public shell with Track F implementation code to integrate.
+The bridge normalizes these into `public.page_viewed` and `public.cta_selected` and de-duplicates the primary-CTA + handoff double dispatch. Track A therefore does not need to replace its public shell with Track F implementation code to integrate.
 
-When Track A resolves the public organization from an approved domain/application mapping, its organization ID remains a hint until the trusted ingestion boundary verifies the scope. `configuration.published` is not a browser fact; emit it only after the authorized publish operation succeeds.
+When Track A resolves the public organization from its approved host/application mapping, its organization ID remains a hint until the trusted ingestion boundary verifies the scope. `configuration.published` is not a browser fact; emit it only after the authorized publish operation succeeds at the trusted mutation boundary.
 
 ### Track B — Experience Architecture
 
-The active Track B branch exposes an injected `ExperienceEventSink` and defaults it to the `nurture:experience-event` browser hook. Track F consumes that hook through a compatibility bridge, preserving Track B's event ID, occurrence time, Experience/module identifiers, idempotency key, and safe properties while treating organization/identity/customer values as non-authoritative hints.
+Track B exposes an injected `ExperienceEventSink` and defaults it to the `nurture:experience-event` browser hook. Track F consumes that hook through a compatibility bridge, preserving Track B's event ID, occurrence time, Experience/module identifiers, idempotency key, and safe properties while treating organization/identity/customer values as non-authoritative hints.
 
 `experience.started` maps directly to the shared catalog. Registered module events such as `experience.reference-assessment.completed` remain namespaced signals. Milestones that drive lifecycle state must be recorded through a validated domain/server action as `experience.milestone_reached` or another approved trusted event. Do not put entitlement decisions into analytics payloads and do not infer access from analytics history.
 
-After the tracks are composed, Track B can inject a Track F-backed sink directly instead of relying on the compatibility browser hook; module code should not need to change.
+After composition, Track B can inject a Track F-backed sink directly instead of relying on the compatibility browser hook; module code should not need to change.
 
 ### Track C — Identity + Customer Onboarding
 
-Emit `registration.started` at the interaction boundary. Emit `lead.created`, `registration.completed`, `identity.verified`, and onboarding completion events only after the corresponding domain action succeeds. Preserve the distinction between a Firebase identity and an organization-scoped customer; use the persisted envelope's `identityId`, `customerId`, and/or subject binding intentionally rather than assuming they are interchangeable.
+Track C now has a concrete browser transport contract: `nurture:lifecycle-signal`. It emits `lead.created`, `registration.started`, `registration.completed`, `identity.verified`, `onboarding.started`, `onboarding.step_completed`, and `onboarding.completed`, carrying event/correlation/idempotency IDs plus identity/customer/lead hints and a bounded payload.
+
+Track F installs `installIdentityLifecycleCompatibilityBridge()` at application composition and converts that hook into `LifecycleEventSubmission` while preserving Track C's identifiers. Its `transport: "browser"` / `trust: "client-observed"` metadata does **not** become persisted event `source` authority. Events that require `domain_action` or `trusted_server` provenance still require Track E/server verification before binding and persistence.
+
+This is especially important for `registration.completed`, `identity.verified`, and onboarding completion: the browser can report that Track C observed the owning action complete, but the persisted envelope must bind the verified Firebase identity and organization/customer relationship. Track C's `identityCustomers/{identityUid}` global account profile remains distinct from an organization-scoped customer.
 
 ### Track D — Offers + Billing
 
-Browser code may record `offer.viewed` and `checkout.started`. `checkout.completed` and every subscription-state event must come from verified backend/provider state and use `provider_webhook` or `trusted_server`. Stripe test-mode events must be stored with `dataMode: "test"` so they cannot be mixed into live commercial metrics.
+Track D's server-side `writeLifecycleEvent` currently materializes the same core envelope fields Track F requires: event/schema/organization/subject, customer/offer context, occurrence/receipt time, source, correlation/idempotency IDs, `dataMode: "test"`, and payload. Its commercial vocabulary (`offer.viewed`, `checkout.started`, `checkout.completed`, `subscription.started`, `subscription.updated`, `subscription.cancelled`) is a subset of the Track F catalog.
+
+The Track F contract verification now includes a Track D-shaped `subscription.started` provider-webhook fixture and passes it through `validateLifecycleEventEnvelope(...)`. A commercial event with an invalid source, such as browser-authored `checkout.completed`, is rejected.
+
+During final branch composition, Track D should validate the materialized envelope before its durable event write or before publishing it through Track E's `EventIntegrationPort<LifecycleEventEnvelope>`. Track F does not replace Track D's Stripe reconciliation, and Track D must retain `dataMode: "test"` for Release 1 so test commercial activity cannot enter live metrics.
+
+`subscription.renewed` remains in the canonical lifecycle catalog even though Track D's current Release 1 producer does not yet emit a distinct renewal event; that is not required to reconstruct the initial purchase vertical slice, but later renewal analytics should use the canonical name rather than inventing another one.
 
 ### Track E — Platform, Security + Operations
 
-Track E owns the durable ingestion/persistence boundary, organization/actor verification, Firestore rules, server authorization, provider webhook verification, and idempotent storage. Track F supplies the event catalog, runtime validation, trust-source matrix, binding helper, and `AnalyticsSubmissionSink` contract. The default browser sink emits `nurture:analytics-submission`; it is a transport hook, not a production event store.
+Track E owns the trusted ingestion/persistence boundary, organization/actor verification, Firestore rules, server authorization, provider webhook verification, and provider/integration conventions. Its completed `EventIntegrationPort<TEvent>` is the correct durable provider-facing seam for Track F events.
 
-Track E must not persist browser `organizationIdHint`, `identityIdHint`, or `customerIdHint` as verified identity merely because they are present. It should bind those values from authenticated/tenant/server context and reject or reconcile mismatches.
+Track F supplies:
+
+- the canonical event catalog;
+- browser/client submission contract;
+- runtime payload and trusted-envelope validation;
+- trust-source matrix;
+- trusted binding helper;
+- `AnalyticsSubmissionSink` client seam.
+
+At composition, Track E should use `EventIntegrationPort<LifecycleEventEnvelope>` for validated trusted records. It must not persist browser `organizationIdHint`, `identityIdHint`, `customerIdHint`, or Track C/Track B subject hints as verified identity merely because they are present. It should bind those values from authenticated tenant/server context and reject or reconcile mismatches.
+
+Track E's still-open durable Firestore rules/audit gates remain Release 1 integration dependencies; Track F does not claim durable production event history is complete until that trusted persistence path exists.
 
 ## 4. Browser behavior
 
@@ -121,7 +144,7 @@ The default browser sink:
 - emits `nurture:analytics-error` when a configured sink rejects a submission;
 - never blocks the user flow if analytics delivery fails.
 
-Compatibility listeners consume the existing Track A public hook and Track B Experience hook. Unknown or malformed compatibility events are not promoted into the canonical stream.
+Compatibility listeners consume Track A's public hook, Track B's Experience hook, and Track C's lifecycle-signal hook. Unknown or malformed compatibility events are not promoted into the canonical stream.
 
 The debug buffer is acceptance/debug evidence only. It is not trusted, durable production history and must not be used to grant access, calculate billing, or report live analytics.
 
@@ -130,8 +153,10 @@ The debug buffer is acceptance/debug evidence only. It is not trusted, durable p
 Track F is ready to merge when:
 
 - the shared event vocabulary and schema compile;
-- Track A's current and proposed public event hooks normalize without requiring Track A implementation ownership to move;
+- Track A's current public event hooks normalize without requiring Track A implementation ownership to move;
 - Track B's browser-observed global and namespaced Experience events enter the Track F submission boundary without becoming trusted milestones;
+- Track C's concrete identity/onboarding lifecycle hook enters the Track F submission boundary while retaining client-observed trust semantics;
+- Track D-shaped trusted provider events pass the Track F envelope validator while invalid commercial sources fail closed;
 - browser submissions cannot be bound as payment/subscription/publish facts by an unauthorized source;
 - browser-provided tenant/customer hints do not override trusted bindings;
 - payload limits and secret-bearing field checks are verified;
@@ -139,7 +164,7 @@ Track F is ready to merge when:
 - CI runs the Track F contract verification;
 - the integration handoffs above are available to Tracks A–E.
 
-The overall Release 1 analytics completion test remains integration-level: the vertical slice must leave durable, server-trusted event history that can reconstruct the customer's path. That final durability depends on Track E's secure ingestion and on Tracks A–D emitting their owned events at the successful domain boundaries.
+The overall Release 1 analytics completion test remains integration-level: the vertical slice must leave durable, server-trusted event history that can reconstruct the customer's path. Track F now covers the concrete A/B/C client transports and D trusted envelope shape; final durability depends on Track E's secure persistence and the integrated A–D success paths.
 
 ## 6. Explicitly deferred
 
