@@ -26,7 +26,6 @@ jobs:
       VITE_FIREBASE_MEASUREMENT_ID: ${{ vars.VITE_FIREBASE_MEASUREMENT_ID }}
       VITE_FIREBASE_APP_CHECK_SITE_KEY: ${{ vars.VITE_FIREBASE_APP_CHECK_SITE_KEY }}
       VITE_RELEASE4_BACKEND_READY: ${{ vars.VITE_RELEASE4_BACKEND_READY }}
-      # Older backend capability remains independently fail-closed until its acceptance evidence is recorded.
       VITE_RELEASE1_BACKEND_READY: 'false'
       VITE_ENABLE_DEMO: 'false'
     steps:
@@ -43,7 +42,7 @@ jobs:
             exit 1
           fi
       - run: npm install --no-audit --no-fund
-      - run: npm run typecheck && npm test && npm run test:release3 && npm run test:experience
+      - run: npm run typecheck && npm test && npm run test:release3 && npm run test:release4 && npm run test:experience
       - run: npx tsc -p tsconfig.analytics.json && node scripts/verify-analytics-contract.mjs
       - run: npm install --prefix functions --no-audit --no-fund
       - run: npm --prefix functions run typecheck && npm --prefix functions test
