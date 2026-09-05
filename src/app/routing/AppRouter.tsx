@@ -17,6 +17,7 @@ import { OnboardingRouteBoundary } from "../../features/onboarding/OnboardingBou
 import { OrganizationAdminRoute } from "../../features/organization/OrganizationAdminRoute";
 import { ParticipantStateView } from "../../features/participant/ParticipantStateView";
 import { PlatformAdminRoute } from "../../features/platform/PlatformAdminRoute";
+import { RetentionLifecycleStudioPage } from "../../features/retention-admin";
 import { CustomerPage } from "../../pages/AppPages";
 import { AddContact, ContactDetail, OrganizationPage } from "../../pages/OrgPages";
 import { PlatformPage } from "../../pages/PlatformPages";
@@ -87,13 +88,19 @@ function LifecycleAdminSurface({ organizationId, runs }: { organizationId: strin
   );
 }
 
-function OrganizationRelease2Content({ organizationId, section, detail }: { organizationId: string; section: string; detail?: string }) {
+function RetentionAdminSurface({ organizationId }: { organizationId: string }) {
+  const organization = useOrganization();
+  return <RetentionLifecycleStudioPage organizationId={organizationId} canPublish={organization.can("lifecycle.manage", organizationId)} canOperate={organization.can("lifecycle.manage", organizationId)} />;
+}
+
+function OrganizationLifecycleContent({ organizationId, section, detail }: { organizationId: string; section: string; detail?: string }) {
   if (section === "customers") {
     return detail
       ? <CustomerWorkspaceDetailPage organizationId={organizationId} customerId={detail} />
       : <CustomerWorkspaceListPage organizationId={organizationId} />;
   }
   if (section === "lifecycle") {
+    if (detail === "retention") return <RetentionAdminSurface organizationId={organizationId} />;
     return <LifecycleAdminSurface organizationId={organizationId} runs={detail === "runs"} />;
   }
   if (section === "communications") return <CommunicationsAdminPage organizationId={organizationId} />;
@@ -150,8 +157,8 @@ export function AppRouter() {
     if (["brand", "site", "configuration"].includes(section)) return <Redirect to={`/org/${organizationId}/admin/brand-site`} />;
     const detail = fifth;
     const capability = section === "brand-site" ? "brand.view" : organizationSectionCapability[section] ?? "workspace.view";
-    const release2Content = OrganizationRelease2Content({ organizationId, section, detail });
-    const content = release2Content ?? (section === "brand-site" ? <BrandSiteAdminPage key={organizationId} organizationId={organizationId} />
+    const lifecycleContent = OrganizationLifecycleContent({ organizationId, section, detail });
+    const content = lifecycleContent ?? (section === "brand-site" ? <BrandSiteAdminPage key={organizationId} organizationId={organizationId} />
       : section === "offers" ? <OrganizationOffersPage organizationId={organizationId} />
       : section === "contacts" && detail === "new"
       ? <AddContact organizationId={organizationId} />
