@@ -225,12 +225,10 @@ function sameCommercialState(previous: StoredSubscription, next: SubscriptionSna
 export function subscriptionLifecycleEvent(
   previous: StoredSubscription | null,
   next: SubscriptionSnapshot,
-  providerEventType: string,
+  _providerEventType: string,
 ): Extract<CommercialLifecycleEventType, "subscription.started" | "subscription.updated" | "subscription.cancelled"> | null {
-  if (!previous) return next.status === "canceled" || providerEventType === "customer.subscription.deleted"
-    ? "subscription.cancelled"
-    : "subscription.started";
+  if (!previous) return next.status === "canceled" ? "subscription.cancelled" : "subscription.started";
   if (sameCommercialState(previous, next)) return null;
-  if (providerEventType === "customer.subscription.deleted" || next.status === "canceled") return "subscription.cancelled";
+  if (next.status === "canceled") return "subscription.cancelled";
   return "subscription.updated";
 }
