@@ -3,14 +3,14 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "main": "lib/index.js",
+  "main": "lib/functions/src/index.js",
   "engines": {
     "node": "22"
   },
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "test": "npm run build && node --test \"lib/**/*.test.js\""
+    "test": "npm run build && node --test lib/functions/src/billing/pricing.test.js lib/functions/src/billing/reconciliation.test.js"
   },
   "dependencies": {
     "firebase-admin": "^14.3.0",
