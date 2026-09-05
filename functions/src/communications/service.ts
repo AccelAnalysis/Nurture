@@ -16,6 +16,7 @@ import {
 } from "../../../shared/communications/contracts.js";
 import { evaluateEmailEligibility } from "../../../shared/communications/eligibility.js";
 import { renderEmailTemplate } from "../../../shared/communications/render.js";
+import { db } from "../firebase.js";
 import { getCommunicationTrustedOrigins } from "./config.js";
 import { communicationTemplateReference, getSendGridEmailAdapter } from "./sendgrid-adapter.js";
 import {
@@ -72,6 +73,46 @@ function providerVariables(values: CommunicationVariableValues) {
   return Object.fromEntries(Object.entries(values).filter((entry): entry is [string, string] => typeof entry[1] === "string"));
 }
 
+function messageRef(organizationId: string, messageId: string) {
+  return db.collection("organizations").doc(organizationId).collection("communicationMessages").doc(messageId);
+}
+
+/**
+ * Atomically moves exactly one eligible logical message effect into the provider
+ * submission state. Concurrent duplicate invocations observe the claimed record
+ * and return without crossing the provider boundary.
+ */
+async function claimProviderAttempt(organizationId: string, messageId: string) {
+  const ref = messageRef(organizationId, messageId);
+  return db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(ref);
+    if (!snapshot.exists) throw new Error("Communication message not found before provider claim.");
+    const current = snapshot.data() as MessageDeliveryRecord;
+    if (!canAttemptExisting(current)) return { claimed: false as const, record: current };
+    const attemptNumber = current.attempts.length + 1;
+    const attemptStartedAt = new Date().toISOString();
+    const pendingAttempt: MessageDeliveryAttempt = {
+      attempt: attemptNumber,
+      startedAt: attemptStartedAt,
+      outcome: "unknown",
+    };
+    const next: MessageDeliveryRecord = {
+      ...current,
+      status: "submitting",
+      statusReason: `provider-attempt-${attemptNumber}-started`,
+      attempts: [...current.attempts, pendingAttempt],
+      updatedAt: attemptStartedAt,
+    };
+    transaction.set(ref, {
+      status: next.status,
+      statusReason: next.statusReason,
+      attempts: next.attempts,
+      updatedAt: next.updatedAt,
+    }, { merge: true });
+    return { claimed: true as const, record: next, attemptNumber, attemptStartedAt };
+  });
+}
+
 export async function dispatchEmail(
   command: DispatchEmailCommand,
   prerequisites: DispatchEmailPrerequisites,
@@ -97,19 +138,6 @@ export async function dispatchEmail(
 
   const persisted = await createMessageIntent(intent);
   let record = persisted.record;
-  if (!persisted.created && record.status === "submitting") {
-    const reason = "prior-attempt-was-submitting; operator/provider reconciliation required before retry";
-    record = await updateMessageRecord(command.organizationId, record.intent.messageId, {
-      status: "unknown",
-      statusReason: reason,
-    }, {
-      eventType: "communication.outcome_unknown",
-      source: "trusted_server",
-      idempotencySuffix: `attempt-${Math.max(1, record.attempts.length)}-recovery`,
-      reason,
-    });
-    return { record, submitted: false };
-  }
   if (!persisted.created && !canAttemptExisting(record)) return { record, submitted: false };
 
   const [template, sender, suppression] = await Promise.all([
@@ -161,14 +189,10 @@ export async function dispatchEmail(
     return { record, eligibility, submitted: false };
   }
 
-  const attemptNumber = record.attempts.length + 1;
-  const attemptStartedAt = new Date().toISOString();
-  const pendingAttempt: MessageDeliveryAttempt = { attempt: attemptNumber, startedAt: attemptStartedAt, outcome: "unknown" };
-  record = await updateMessageRecord(command.organizationId, record.intent.messageId, {
-    status: "submitting",
-    statusReason: `provider-attempt-${attemptNumber}-started`,
-    attempts: [...record.attempts, pendingAttempt],
-  });
+  const claim = await claimProviderAttempt(command.organizationId, record.intent.messageId);
+  if (!claim.claimed) return { record: claim.record, eligibility, submitted: false };
+  record = claim.record;
+  const { attemptNumber, attemptStartedAt } = claim;
 
   const result = await provider.send({
     organizationId: command.organizationId,
