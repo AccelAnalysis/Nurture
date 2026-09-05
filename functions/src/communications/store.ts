@@ -17,6 +17,7 @@ import {
 } from "../../../shared/communications/contracts.js";
 import { validateEmailTemplateContent } from "../../../shared/communications/render.js";
 import { db } from "../firebase.js";
+import { shouldApplyProviderTransition } from "./delivery-state.js";
 
 interface StoredCommunicationTemplate {
   schemaVersion: typeof COMMUNICATION_SCHEMA_VERSION;
@@ -405,7 +406,7 @@ export async function applyVerifiedProviderEvent(input: {
       return { state: "unmatched" as const };
     }
     const current = target.data() as MessageDeliveryRecord;
-    if (input.nextStatus) {
+    if (input.nextStatus && shouldApplyProviderTransition(current.status, input.nextStatus)) {
       const patch: Record<string, unknown> = {
         status: input.nextStatus,
         statusReason: input.statusReason ?? `sendgrid-${input.eventType}`,
