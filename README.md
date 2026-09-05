@@ -1,6 +1,14 @@
 # Nurture
 
-Nurture is a general app hub built around the Seven-Stage Customer Pipeline.
+Nurture is a configurable application foundation: **Configurable Shell + Pluggable Experience + Lifecycle Engine**. The Experience can be anything; Nurture owns the customer lifecycle around it.
+
+## Product specification — start here
+
+The canonical target definition is [`docs/product/nurture-product-spec.md`](docs/product/nurture-product-spec.md). Read it before building or changing architecture. It preserves the owner's 33-section baseline and separates the configurable shell from the Experience and lifecycle engine.
+
+See the [product documentation index](docs/product/README.md) for the Experience module contract, lifecycle model, Apple HIG / Nurture design requirements, linked stock-media and YouTube requirements, release plan, and acceptance tests.
+
+The repository specification is authoritative for builds; chat is a working session for proposed changes. Target requirements are not claims that the features are implemented. Earlier business-management/CRM concepts may become Experiences, but are not the Nurture shell itself.
 
 ## Core stack
 
