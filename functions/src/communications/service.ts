@@ -46,6 +46,8 @@ export interface DispatchEmailPrerequisites {
   /** Current C-owned purpose/channel fact, interpreted by D immediately before dispatch admission. */
   consent: EmailConsentSnapshot;
   testAllowlisted?: boolean;
+  /** Test execution keeps the real lead/customer subject in history while applying the controlled-test recipient gate. */
+  eligibilityRecipientKind?: "customer" | "lead" | "test";
 }
 
 export interface DispatchEmailResult {
@@ -96,9 +98,14 @@ export async function dispatchEmail(
   const persisted = await createMessageIntent(intent);
   let record = persisted.record;
   if (!persisted.created && record.status === "submitting") {
+    const reason = "prior-attempt-was-submitting; operator/provider reconciliation required before retry";
     record = await updateMessageRecord(command.organizationId, record.intent.messageId, {
       status: "unknown",
-      statusReason: "prior-attempt-was-submitting; operator/provider reconciliation required before retry",
+      statusReason: reason,
+    }, {
+      eventType: "communication.outcome_unknown",
+      source: "trusted_server",
+      reason,
     });
     return { record, submitted: false };
   }
@@ -118,7 +125,7 @@ export async function dispatchEmail(
     mode: command.mode,
     purpose: command.purpose,
     templatePurpose: template.purpose,
-    recipientKind: command.recipient.kind,
+    recipientKind: prerequisites.eligibilityRecipientKind ?? command.recipient.kind,
     recipientAvailable: Boolean(prerequisites.recipientEmail),
     sender,
     consent: prerequisites.consent,
@@ -126,10 +133,15 @@ export async function dispatchEmail(
     testAllowlisted: prerequisites.testAllowlisted,
   });
   if (eligibility.outcome !== "eligible") {
+    const statusReason = `${eligibility.reason}: ${eligibility.explanation}`;
     record = await updateMessageRecord(command.organizationId, record.intent.messageId, {
       status: eligibility.outcome === "hold" ? "held" : "suppressed",
-      statusReason: `${eligibility.reason}: ${eligibility.explanation}`,
-    });
+      statusReason,
+    }, eligibility.outcome === "suppress" ? {
+      eventType: "communication.suppressed",
+      source: "trusted_server",
+      reason: statusReason,
+    } : undefined);
     return { record, eligibility, submitted: false };
   }
 
@@ -201,10 +213,15 @@ export async function dispatchEmail(
     ...(result.error.retryAfterMs ? { retryAfterMs: result.error.retryAfterMs } : {}),
     reason: `${result.error.code}: ${result.error.message}`,
   };
+  const statusReason = ambiguous ? "provider-outcome-unknown; no blind retry" : `${result.error.code}: ${result.error.message}`;
   record = await updateMessageRecord(command.organizationId, record.intent.messageId, {
     status: ambiguous ? "unknown" : "failed",
-    statusReason: ambiguous ? "provider-outcome-unknown; no blind retry" : `${result.error.code}: ${result.error.message}`,
+    statusReason,
     attempts: [...record.attempts.slice(0, -1), completedAttempt],
+  }, {
+    eventType: ambiguous ? "communication.outcome_unknown" : "communication.failed",
+    source: "trusted_server",
+    reason: statusReason,
   });
   return { record, eligibility, submitted: true };
 }
