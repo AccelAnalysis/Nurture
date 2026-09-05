@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { REFERENCE_ASSESSMENT_CAPABILITIES } from "../../../../shared/experience/reference-capabilities";
 import { Badge, Button, Card } from "../../../components/ui";
 import type { ExperienceMediaAsset, ExperienceModule, ExperienceModuleRenderContext } from "../contracts";
 
@@ -151,7 +152,7 @@ function Review({ context }: { context: ExperienceModuleRenderContext }) {
 }
 
 function DeepDive({ context }: { context: ExperienceModuleRenderContext }) {
-  const decision = context.canUse("nurture.reference-assessment.deep-dive");
+  const decision = context.canUse(REFERENCE_ASSESSMENT_CAPABILITIES.deepDive);
   return (
     <Card>
       <Badge tone={decision.allowed ? "positive" : "warning"}>{decision.allowed ? "Entitled" : "Restricted"}</Badge>
@@ -171,14 +172,14 @@ export const referenceAssessmentModule: ExperienceModule = {
     description: "A deliberately small reference Experience proving trial, authenticated, entitlement, media, routing, and lifecycle boundaries.",
     icon: "/brand/logo/nurture-n.svg",
     routes: [
-      { path: "", label: "Check", access: ["public", "trial", "authenticated"], capability: "nurture.reference-assessment.preview" },
-      { path: "review", label: "Review", access: ["authenticated"], capability: "nurture.reference-assessment.review" },
-      { path: "deep-dive", label: "Deep dive", access: ["authenticated"], capability: "nurture.reference-assessment.deep-dive" },
+      { path: "", label: "Check", access: ["public", "trial", "authenticated"], capability: REFERENCE_ASSESSMENT_CAPABILITIES.preview },
+      { path: "review", label: "Review", access: ["authenticated"], capability: REFERENCE_ASSESSMENT_CAPABILITIES.review },
+      { path: "deep-dive", label: "Deep dive", access: ["authenticated"], capability: REFERENCE_ASSESSMENT_CAPABILITIES.deepDive },
     ],
     navigation: [
-      { path: "", label: "Check", description: "Run the short reference interaction.", access: ["public", "trial", "authenticated"], capability: "nurture.reference-assessment.preview" },
-      { path: "review", label: "Review", description: "Account-only continuation.", access: ["authenticated"], capability: "nurture.reference-assessment.review" },
-      { path: "deep-dive", label: "Deep dive", description: "Protected capability handoff.", access: ["authenticated"], capability: "nurture.reference-assessment.deep-dive" },
+      { path: "", label: "Check", description: "Run the short reference interaction.", access: ["public", "trial", "authenticated"], capability: REFERENCE_ASSESSMENT_CAPABILITIES.preview },
+      { path: "review", label: "Review", description: "Account-only continuation.", access: ["authenticated"], capability: REFERENCE_ASSESSMENT_CAPABILITIES.review },
+      { path: "deep-dive", label: "Deep dive", description: "Protected capability handoff.", access: ["authenticated"], capability: REFERENCE_ASSESSMENT_CAPABILITIES.deepDive },
     ],
     configurationSchema: {
       title: { type: "string", label: "Experience title", required: true },
@@ -190,19 +191,19 @@ export const referenceAssessmentModule: ExperienceModule = {
     },
     capabilities: [
       {
-        key: "nurture.reference-assessment.preview",
+        key: REFERENCE_ASSESSMENT_CAPABILITIES.preview,
         label: "Momentum Check",
         description: "Complete the short reference interaction.",
         availability: ["public", "trial", "authenticated"],
       },
       {
-        key: "nurture.reference-assessment.review",
+        key: REFERENCE_ASSESSMENT_CAPABILITIES.review,
         label: "Account review",
         description: "Continue the reference Experience after authentication.",
         availability: ["authenticated"],
       },
       {
-        key: "nurture.reference-assessment.deep-dive",
+        key: REFERENCE_ASSESSMENT_CAPABILITIES.deepDive,
         label: "Deep dive",
         description: "A protected optional capability used to prove entitlement enforcement.",
         availability: ["authenticated"],
