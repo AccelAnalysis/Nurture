@@ -118,10 +118,57 @@ export interface ExperienceProfileRequirement {
   sensitivity: "standard" | "sensitive";
 }
 
-export interface ExperienceOnboardingRequirement {
+/**
+ * Track B mirrors the public shape of Track C's onboarding extension contract
+ * without importing Track C implementation code. The helper in onboarding.ts
+ * projects these requirements to `{ source: "experience", namespace, steps }`.
+ */
+export type ExperienceOnboardingFieldType = "text" | "email" | "tel" | "textarea" | "checkbox" | "select";
+
+export interface ExperienceOnboardingFieldOption {
+  value: string;
+  label: string;
+}
+
+export interface ExperienceOnboardingFieldDefinition {
   id: string;
   label: string;
+  type: ExperienceOnboardingFieldType;
+  required: boolean;
+  purpose: string;
+  placeholder?: string;
+  profileField?: "displayName" | "firstName" | "lastName" | "phone";
+  preferenceField?: string;
+  options?: ExperienceOnboardingFieldOption[];
+}
+
+export interface ExperienceOnboardingAgreementDefinition {
+  id: string;
+  version: string;
+  label: string;
+  required: boolean;
+  href?: string;
+}
+
+export interface ExperienceOnboardingStepDefinition {
+  id: string;
+  route: string;
+  label: string;
+  description: string;
+  optional: boolean;
+  fields?: ExperienceOnboardingFieldDefinition[];
+  agreement?: ExperienceOnboardingAgreementDefinition;
+}
+
+export interface ExperienceOnboardingRequirement extends ExperienceOnboardingStepDefinition {
+  /** Human-readable completion rule retained in the Experience manifest. */
   completion: string;
+}
+
+export interface ExperienceOnboardingExtension {
+  source: "experience";
+  namespace: string;
+  steps: ExperienceOnboardingStepDefinition[];
 }
 
 export interface ExperienceActivityDefinition {
@@ -207,6 +254,16 @@ export interface ExperienceLifecycleEvent {
   properties: JsonObject;
 }
 
+/** Track A integration: canonical public organization/tenant resolution. */
+export interface ExperienceOrganizationScopeRequest {
+  accessMode: ExperienceAccessMode;
+  authenticatedOrganizationId?: string;
+}
+
+export interface ExperienceOrganizationSource {
+  resolveOrganizationId(request: ExperienceOrganizationScopeRequest): string | null;
+}
+
 /** Track A integration: published organization Experience/configuration. */
 export interface ExperienceDefinitionRequest {
   organizationId?: string;
@@ -219,7 +276,11 @@ export interface ExperienceDefinitionSource {
   loadPublishedExperience(request: ExperienceDefinitionRequest): Promise<Experience | null>;
 }
 
-/** Track C integration: Identity is not Customer; resolve the host Customer separately. */
+/**
+ * Track C integration. Release 1 resolves the stable Nurture Customer/Profile
+ * identity independently of tenant scope; organization scope is carried and
+ * re-checked by the Experience/entitlement records.
+ */
 export interface ExperienceCustomerRequest {
   organizationId?: string;
   identityId: string;
