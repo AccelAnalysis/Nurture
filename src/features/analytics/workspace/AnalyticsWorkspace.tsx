@@ -28,9 +28,11 @@ export function metricDisplay(result: MetricResult | undefined): string {
   return `${number(result.value)}${result.definition.unit === "percent" ? "%" : result.definition.unit === "hours" ? " hours" : ""}`;
 }
 function MetricCard({ definition: d, result }: { definition: MetricDefinition; result?: MetricResult }) {
+  const versionScopeRequired = d.metricId === "satisfaction.nps" && !result;
   return <article className="r5-metric" aria-labelledby={`metric-${d.metricId}`}>
-    <div className="r5-metric-header"><h3 id={`metric-${d.metricId}`}>{d.name}</h3><span className="r5-status">{result?.status ?? "Not loaded"}</span></div>
+    <div className="r5-metric-header"><h3 id={`metric-${d.metricId}`}>{d.name}</h3><span className="r5-status">{versionScopeRequired ? "Scope required" : result?.status ?? "Not loaded"}</span></div>
     <p className="r5-value">{metricDisplay(result)}<span className="r5-unit">{d.unit === "count" ? "distinct " + d.subject + " keys" : d.unit === "score" ? "NPS points" : ""}</span></p>
+    {versionScopeRequired ? <p>Select Satisfaction, choose the surveyVersion breakdown filter, and enter one published survey version to calculate NPS without mixing versions.</p> : null}
     {result && <p>{result.numerator !== null && <>Numerator: {number(result.numerator)}. </>}{result.denominator !== null && <>Denominator: {number(result.denominator)}.</>}</p>}
     {result?.pendingSubjects ? <p>{result.pendingSubjects} subject(s) still need follow-up. This is not a final cohort result.</p> : null}
     {result?.snapshotAt && <p>Snapshot: <time dateTime={result.snapshotAt}>{result.snapshotAt}</time>. Not the selected period’s revenue.</p>}
@@ -78,9 +80,12 @@ export function AnalyticsWorkspaceView({ organizationId, userId, isDemo, can, lo
   const visible = METRIC_REGISTRY.filter((d) => (domain === "all" || d.domain === domain) && (!selectedStage || (selectedStage.metrics as readonly string[]).includes(d.metricId)) && d.permissions.every((capability) => can(capability, organizationId)));
   const allowedDimensions = visible.length ? visible[0].dimensions.filter((dimension) => visible.every((d) => d.dimensions.includes(dimension))) : [];
   const effectiveKey = filterKey && allowedDimensions.includes(filterKey) ? filterKey : "";
+  const scopedMetricIds = visible
+    .filter((definition) => definition.metricId !== "satisfaction.nps" || (effectiveKey === "surveyVersion" && Boolean(filterValue.trim())))
+    .map((definition) => definition.metricId);
   const query = useMemo<MetricQuery>(() => ({ organizationId, from: `${from}T00:00:00.000Z`, to: `${to}T00:00:00.000Z`, dataMode: mode,
-    metricIds: visible.map((d) => d.metricId), filters: effectiveKey && filterValue ? { [effectiveKey]: filterValue.trim() } : {}, currency, observationDays,
-  }), [organizationId, from, to, mode, visible.map((d) => d.metricId).join("|"), effectiveKey, filterValue, currency, observationDays]);
+    metricIds: scopedMetricIds, filters: effectiveKey && filterValue ? { [effectiveKey]: filterValue.trim() } : {}, currency, observationDays,
+  }), [organizationId, from, to, mode, scopedMetricIds.join("|"), effectiveKey, filterValue, currency, observationDays]);
   const key = JSON.stringify({ query, uid: userId, isDemo, reload });
   // Results from another tenant, account, mode or filter never render under the new heading.
   const report = loaded.key === key ? loaded.report : undefined;
@@ -89,7 +94,7 @@ export function AnalyticsWorkspaceView({ organizationId, userId, isDemo, can, lo
   useEffect(() => {
     const ticket = ++serial.current;
     setLoadingKey("");
-    if (!query.metricIds.length) { setLoaded({ key, error: "Your role does not grant access to these metrics." }); return; }
+    if (!query.metricIds.length) { setLoaded({ key, error: "Your role or current scope does not grant a queryable metric. Select a required version scope where indicated." }); return; }
     if (isDemo) { setLoaded({ key, error: "Demo session: real analytics is unavailable. This workspace does not generate sample performance numbers." }); return; }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from >= to || Date.parse(query.to) - Date.parse(query.from) > 93 * 86_400_000) { setLoaded({ key, error: "Choose an increasing UTC date range of at most 93 days." }); return; }
     setLoadingKey(key);
@@ -108,18 +113,18 @@ export function AnalyticsWorkspaceView({ organizationId, userId, isDemo, can, lo
       <p>UTC reporting · {mode === "live" ? "Live records only" : "Test records only — not production performance"} · No automatic changes to offers or campaigns.</p>
     </header>
     <section className="r5-stage-panel" aria-labelledby="lifecycle-map"><h2 id="lifecycle-map">Lifecycle view</h2><p>Overlapping activity measures, not mutually exclusive customer stages. Customers can enter, return and participate in more than one Experience.</p>
-      <ol className="r5-stages">{LIFECYCLE_STAGES.map((item, i) => <li key={item.id}><button type="button" aria-pressed={stage === item.id} onClick={() => { setStage(stage === item.id ? null : item.id); setDomain("all"); setFilterKey(""); }}><span aria-hidden="true">{i + 1}</span>{item.name}</button></li>)}</ol>
+      <ol className="r5-stages">{LIFECYCLE_STAGES.map((item, i) => <li key={item.id}><button type="button" aria-pressed={stage === item.id} onClick={() => { setStage(stage === item.id ? null : item.id); setDomain("all"); setFilterKey(""); setFilterValue(""); }}><span aria-hidden="true">{i + 1}</span>{item.name}</button></li>)}</ol>
       <p className="r5-loop">Return paths: Feedback + Referral → Marketing; renewal or re-engagement → App Experience. The Experience remains available according to access, not stage position.</p>
       {stage && <button type="button" onClick={() => setStage(null)}>Show all lifecycle measures</button>}
     </section>
     <form className="r5-controls" aria-label="Analytics filters" onSubmit={(e) => { e.preventDefault(); setReload((n) => n + 1); }}>
-      <label>Measure family<select aria-label="Measure family" value={domain} onChange={(e) => { setDomain(e.target.value as MetricDomain | "all"); setStage(null); setFilterKey(""); }}><option value="all">All permitted measures</option>{domains.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}</select></label>
+      <label>Measure family<select aria-label="Measure family" value={domain} onChange={(e) => { setDomain(e.target.value as MetricDomain | "all"); setStage(null); setFilterKey(""); setFilterValue(""); }}><option value="all">All permitted measures</option>{domains.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}</select></label>
       <label>Start date (UTC)<input aria-label="Start date (UTC)" type="date" value={from} onChange={(e) => setFrom(e.target.value)} required /></label>
       <label>End date (exclusive, UTC)<input aria-label="End date (exclusive, UTC)" type="date" value={to} onChange={(e) => setTo(e.target.value)} required /></label>
       <label>Data mode<select aria-label="Data mode" value={mode} onChange={(e) => setMode(e.target.value as "live" | "test")}><option value="live">Live</option><option value="test">Test — not live</option></select></label>
       <label>Follow-up window<select aria-label="Follow-up window" value={observationDays} onChange={(e) => setObservationDays(Number(e.target.value))}>{[1, 7, 14, 30, 60, 90].map((days) => <option key={days} value={days}>{days} days</option>)}</select></label>
       <label>Currency (no conversion)<input aria-label="Currency (no conversion)" value={currency} maxLength={3} pattern="[A-Z]{3}" onChange={(e) => setCurrency(e.target.value.toUpperCase())} /></label>
-      <label>Breakdown filter<select aria-label="Breakdown filter" value={effectiveKey} disabled={!allowedDimensions.length} onChange={(e) => setFilterKey(e.target.value as Dimension | "")}><option value="">None</option>{allowedDimensions.map((dimension) => <option key={dimension} value={dimension}>{dimension}</option>)}</select></label>
+      <label>Breakdown filter<select aria-label="Breakdown filter" value={effectiveKey} disabled={!allowedDimensions.length} onChange={(e) => { setFilterKey(e.target.value as Dimension | ""); setFilterValue(""); }}><option value="">None</option>{allowedDimensions.map((dimension) => <option key={dimension} value={dimension}>{dimension}</option>)}</select></label>
       {effectiveKey && <label>Exact filter value<input aria-label="Exact filter value" value={filterValue} maxLength={160} onChange={(e) => setFilterValue(e.target.value)} placeholder="Stable ID or version" /></label>}
       <button type="submit" disabled={loading}>Refresh metrics</button>
     </form>
