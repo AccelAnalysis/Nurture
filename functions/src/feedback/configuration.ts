@@ -26,7 +26,7 @@ export class FeedbackConfigurationService {
   }
   async publish(scope: FeedbackScope, actor: TrustedFeedbackActor, kind: Kind, entityId: string, expectedRevision: number): Promise<PublishedFeedbackVersion<Draft>> {
     invariant(kind === "survey" || kind === "program", "invalid-input"); id(entityId); integer(expectedRevision, 1, 1_000_000); staff(actor, names[kind].manage);
-    return this.deps.store.transaction(scope, async tx => {
+    const version = await this.deps.store.transaction(scope, async tx => {
       const policy = await mutationPolicy(this.deps, tx, scope);
       const config = await tx.get<FeedbackConfiguration<Draft>>(names[kind].config, entityId);
       invariant(config && config.revision === expectedRevision && !config.archived, "conflict");
@@ -36,11 +36,15 @@ export class FeedbackConfigurationService {
       const versionId = key(this.deps, scope, kind, entityId, String(expectedRevision));
       const existing = await tx.get<PublishedFeedbackVersion<Draft>>(names[kind].versions, versionId);
       if (existing) return existing;
-      const version = { id: versionId, entityId, revision: config.revision, value: structuredClone(config.draft), publishedAt: this.deps.now() };
-      tx.create(names[kind].versions, versionId, version); tx.put(names[kind].config, entityId, { ...config, publishedVersionId: versionId });
+      const published = { id: versionId, entityId, revision: config.revision, value: structuredClone(config.draft), publishedAt: this.deps.now() };
+      tx.create(names[kind].versions, versionId, published); tx.put(names[kind].config, entityId, { ...config, publishedVersionId: versionId });
       audit(tx, scope, `feedback.${kind}.published`, entityId, actor, key(this.deps, scope, versionId, "publish"), { versionId });
-      return version;
+      return published;
     });
+    // Synchronization creates/refreshes a disabled Release 3 draft only. It does
+    // not activate customer treatment and is safe to retry after a partial UI failure.
+    await this.deps.syncAutomation(scope, kind, entityId, version.id, version.value, actor.uid);
+    return version;
   }
   async archive(scope: FeedbackScope, actor: TrustedFeedbackActor, kind: Kind, entityId: string, expectedRevision: number): Promise<void> {
     invariant(kind === "survey" || kind === "program", "invalid-input"); id(entityId); integer(expectedRevision, 1, 1_000_000); staff(actor, names[kind].manage);
