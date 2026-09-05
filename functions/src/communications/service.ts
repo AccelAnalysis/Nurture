@@ -22,12 +22,12 @@ import { communicationTemplateReference, getSendGridEmailAdapter } from "./sendg
 import {
   createMessageIntent,
   getEmailSenderReadiness,
-  getEmailSuppression,
   getPublishedCommunicationTemplate,
   hashRecipientEmail,
   registerProviderAcceptance,
   updateMessageRecord,
 } from "./store.js";
+import { getEffectiveEmailSuppression } from "./suppression.js";
 
 export interface DispatchEmailCommand {
   organizationId: string;
@@ -66,8 +66,6 @@ function lastAttempt(record: MessageDeliveryRecord) {
 function canAttemptExisting(record: MessageDeliveryRecord) {
   if (record.status === "planned") return true;
   const last = lastAttempt(record);
-  // Track E owns retry count/backoff. D only admits an E-requested repeat when
-  // the prior provider attempt was explicitly classified safe-to-retry.
   return record.status === "failed" && last?.outcome === "retryable-failure";
 }
 
@@ -79,11 +77,7 @@ function messageRef(organizationId: string, messageId: string) {
   return db.collection("organizations").doc(organizationId).collection("communicationMessages").doc(messageId);
 }
 
-/**
- * Atomically moves exactly one eligible logical message effect into the provider
- * submission state. Concurrent duplicate invocations observe the claimed record
- * and return without crossing the provider boundary.
- */
+/** Only this transaction may grant a logical message the right to cross the provider boundary. */
 async function claimProviderAttempt(organizationId: string, messageId: string) {
   const ref = messageRef(organizationId, messageId);
   return db.runTransaction(async (transaction) => {
@@ -93,11 +87,7 @@ async function claimProviderAttempt(organizationId: string, messageId: string) {
     if (!canAttemptExisting(current)) return { claimed: false as const, record: current };
     const attemptNumber = current.attempts.length + 1;
     const attemptStartedAt = new Date().toISOString();
-    const pendingAttempt: MessageDeliveryAttempt = {
-      attempt: attemptNumber,
-      startedAt: attemptStartedAt,
-      outcome: "unknown",
-    };
+    const pendingAttempt: MessageDeliveryAttempt = { attempt: attemptNumber, startedAt: attemptStartedAt, outcome: "unknown" };
     const next: MessageDeliveryRecord = {
       ...current,
       status: "submitting",
@@ -157,7 +147,7 @@ export async function dispatchEmail(
   const [template, sender, suppression] = await Promise.all([
     getPublishedCommunicationTemplate(command.organizationId, command.templateId, command.templateVersion),
     getEmailSenderReadiness(command.organizationId),
-    getEmailSuppression(recipientHash),
+    getEffectiveEmailSuppression({ organizationId: command.organizationId, recipientHash, purpose: command.purpose }),
   ]);
   if (!template) {
     record = await updateMessageRecord(command.organizationId, record.intent.messageId, { status: "held", statusReason: "published-template-version-not-found" });
