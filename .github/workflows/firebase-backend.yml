@@ -47,15 +47,31 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Prepare Firebase service account
-        env:
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_NURTURE_12398 }}
+      - name: Authenticate Google Cloud deploy principal
+        id: google-auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_NURTURE_12398 }}
+      - name: Set up Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: nurture-12398
+      - name: Verify deployment identity and Service Usage access
         run: |
-          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
-          chmod 600 "$RUNNER_TEMP/firebase-service-account.json"
-      - name: Deploy Firestore rules and indexes
+          set -euo pipefail
+          EXPECTED_EMAIL="$(node -e "const j=JSON.parse(process.env.SA_JSON); process.stdout.write(j.client_email)")"
+          ACTIVE_EMAIL="$(gcloud auth list --filter=status:ACTIVE --format='value(account)')"
+          ACTIVE_PROJECT="$(gcloud config get-value project 2>/dev/null)"
+          echo "Active deployment account: ${ACTIVE_EMAIL}"
+          echo "Active Google Cloud project: ${ACTIVE_PROJECT}"
+          test "${ACTIVE_EMAIL}" = "${EXPECTED_EMAIL}"
+          test "${ACTIVE_PROJECT}" = "nurture-12398"
+          FIRESTORE_STATE="$(gcloud services describe firestore.googleapis.com --project=nurture-12398 --format='value(state)')"
+          echo "Firestore API state: ${FIRESTORE_STATE}"
+          test "${FIRESTORE_STATE}" = "ENABLED"
         env:
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-service-account.json
+          SA_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_NURTURE_12398 }}
+      - name: Deploy Firestore rules and indexes
         run: npx -y firebase-tools@latest deploy --only firestore:rules,firestore:indexes --project nurture-12398 --non-interactive
 
   deploy-functions:
@@ -71,19 +87,35 @@ jobs:
         with:
           node-version: 24
       - run: npm install --prefix functions --no-audit --no-fund
-      - name: Prepare Firebase service account
-        env:
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_NURTURE_12398 }}
+      - name: Authenticate Google Cloud deploy principal
+        id: google-auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_NURTURE_12398 }}
+      - name: Set up Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: nurture-12398
+      - name: Verify deployment identity and required APIs
         run: |
-          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
-          chmod 600 "$RUNNER_TEMP/firebase-service-account.json"
-      - name: Deploy Release 2 Functions
+          set -euo pipefail
+          EXPECTED_EMAIL="$(node -e "const j=JSON.parse(process.env.SA_JSON); process.stdout.write(j.client_email)")"
+          ACTIVE_EMAIL="$(gcloud auth list --filter=status:ACTIVE --format='value(account)')"
+          ACTIVE_PROJECT="$(gcloud config get-value project 2>/dev/null)"
+          echo "Active deployment account: ${ACTIVE_EMAIL}"
+          echo "Active Google Cloud project: ${ACTIVE_PROJECT}"
+          test "${ACTIVE_EMAIL}" = "${EXPECTED_EMAIL}"
+          test "${ACTIVE_PROJECT}" = "nurture-12398"
+          for api in cloudfunctions.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com run.googleapis.com eventarc.googleapis.com pubsub.googleapis.com cloudscheduler.googleapis.com; do
+            state="$(gcloud services describe "$api" --project=nurture-12398 --format='value(state)')"
+            echo "$api: $state"
+            test "$state" = "ENABLED"
+          done
         env:
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-service-account.json
+          SA_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_NURTURE_12398 }}
+      - name: Deploy Release 2 Functions
         run: npx -y firebase-tools@latest deploy --only functions --project nurture-12398 --non-interactive
       - name: Verify deployed Functions inventory
-        env:
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-service-account.json
         run: |
           npx -y firebase-tools@latest functions:list --project nurture-12398 --json > /tmp/functions.json
           node - <<'NODE'
