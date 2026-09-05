@@ -1,0 +1,17 @@
+.r3-studio { display: grid; gap: 1rem; }
+.r3-studio__grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(18rem, .65fr); gap: 1rem; align-items: start; }
+.r3-studio__panel { background: var(--n-surface, #fff); color: var(--n-text, #101828); border: 1px solid color-mix(in srgb, currentColor 14%, transparent); border-radius: 1rem; padding: 1rem; box-shadow: 0 8px 24px rgb(15 23 42 / .06); }
+.r3-studio__panel h2, .r3-studio__panel h3 { margin-top: 0; }
+.r3-studio__field { display: grid; gap: .35rem; margin-block: .75rem; }
+.r3-studio__field input, .r3-studio__field select, .r3-studio__field textarea { min-height: 44px; font: inherit; border-radius: .75rem; border: 1px solid color-mix(in srgb, currentColor 22%, transparent); background: var(--n-surface, #fff); color: inherit; padding: .65rem .75rem; }
+.r3-studio__actions { display: flex; flex-wrap: wrap; gap: .65rem; margin-top: 1rem; }
+.r3-studio__actions button { min-height: 44px; border-radius: 999px; padding-inline: 1rem; font: inherit; cursor: pointer; }
+.r3-studio__actions button:focus-visible, .r3-studio a:focus-visible, .r3-studio input:focus-visible, .r3-studio select:focus-visible, .r3-studio textarea:focus-visible { outline: 3px solid currentColor; outline-offset: 2px; }
+.r3-studio__status { border-inline-start: .25rem solid currentColor; padding-inline-start: .75rem; }
+.r3-studio__list { display: grid; gap: .75rem; padding: 0; list-style: none; }
+.r3-studio__run { border-top: 1px solid color-mix(in srgb, currentColor 12%, transparent); padding-top: .75rem; }
+.r3-studio__muted { opacity: .72; }
+.r3-studio__danger { border-color: currentColor; }
+@media (max-width: 840px) { .r3-studio__grid { grid-template-columns: 1fr; } }
+@media (prefers-reduced-transparency: reduce) { .r3-studio__panel { background: Canvas; color: CanvasText; } }
+@media (forced-colors: active) { .r3-studio__panel, .r3-studio__field input, .r3-studio__field select, .r3-studio__field textarea { border: 1px solid CanvasText; } }
