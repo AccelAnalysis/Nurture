@@ -1,0 +1,11 @@
+.r3-preferences { display: grid; gap: 1rem; max-width: 52rem; }
+.r3-preferences__section { border: 1px solid color-mix(in srgb, currentColor 15%, transparent); border-radius: 1rem; padding: 1rem; background: var(--n-surface, Canvas); color: var(--n-text, CanvasText); }
+.r3-preferences__field { display: grid; gap: .35rem; margin-block: .8rem; }
+.r3-preferences input, .r3-preferences select, .r3-preferences button, .r3-preferences a { min-height: 44px; font: inherit; }
+.r3-preferences input, .r3-preferences select { border: 1px solid color-mix(in srgb, currentColor 22%, transparent); border-radius: .75rem; padding: .65rem .75rem; background: var(--n-surface, Canvas); color: inherit; }
+.r3-preferences__row { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; }
+.r3-preferences button, .r3-preferences a { display: inline-flex; align-items: center; justify-content: center; padding-inline: 1rem; border-radius: 999px; }
+.r3-preferences :is(button,a,input,select):focus-visible { outline: 3px solid currentColor; outline-offset: 2px; }
+.r3-preferences__note { opacity: .76; }
+.r3-preferences__danger { border-color: currentColor; }
+@media (forced-colors: active) { .r3-preferences__section, .r3-preferences input, .r3-preferences select { border: 1px solid CanvasText; } }

@@ -59,3 +59,21 @@ export {
   setOrganizationAcquisitionPause,
 } from "./lifecycle/admin.js";
 export { drainAcquisitionJobs } from "./acquisition/worker.js";
+
+export {
+  r3GetLifecycleStudio,
+  r3SaveAutomationDraft,
+  r3PublishAutomationDefinition,
+  r3DryRunAutomationDefinition,
+  r3ExecuteRecoveryCommand,
+  r3GetCustomerLifecycleControl,
+  r3SetCustomerLifecyclePreferences,
+  r3GetInAppTreatment,
+  r3RecordInAppTreatmentInteraction,
+} from "./lifecycle/release3-admin.js";
+export { r3SetLifecycleRuntimeControl } from "./lifecycle/release3-control.js";
+export { r3RequestCancellation } from "./lifecycle/release3-cancellation.js";
+export {
+  r3ProjectLifecycleEvent,
+  r3DrainLifecycleRuns,
+} from "./lifecycle/release3-runtime.js";
