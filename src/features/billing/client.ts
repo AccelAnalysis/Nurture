@@ -5,6 +5,7 @@ import type {
   CheckoutSessionRequest,
   CheckoutSessionResult,
   CommercialOffer,
+  SubscriptionSnapshot,
 } from "./contracts";
 
 function requireFunctions() {
@@ -12,6 +13,33 @@ function requireFunctions() {
     throw new Error("Billing requires the configured Nurture Firebase project.");
   }
   return functions;
+}
+
+export async function listPublishedOffers(organizationId: string) {
+  const callable = httpsCallable<{ organizationId: string }, { offers: CommercialOffer[] }>(
+    requireFunctions(),
+    "listPublishedOffers",
+  );
+  const result = await callable({ organizationId });
+  return result.data.offers;
+}
+
+export async function listOrganizationOffers(organizationId: string) {
+  const callable = httpsCallable<{ organizationId: string }, { offers: CommercialOffer[] }>(
+    requireFunctions(),
+    "listOrganizationOffers",
+  );
+  const result = await callable({ organizationId });
+  return result.data.offers;
+}
+
+export async function getCurrentSubscription(organizationId: string) {
+  const callable = httpsCallable<
+    { organizationId: string },
+    { subscription: SubscriptionSnapshot | null }
+  >(requireFunctions(), "getCurrentSubscription");
+  const result = await callable({ organizationId });
+  return result.data.subscription;
 }
 
 export async function createCheckoutSession(request: CheckoutSessionRequest) {
