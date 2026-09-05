@@ -16,6 +16,11 @@ import type {
   ExperienceSlot,
   JsonObject,
 } from "./contracts";
+import {
+  validateExperienceHostEvent,
+  validateExperienceManifestLifecycle,
+  validateExperienceModuleEvent,
+} from "./events";
 import { SharedExperienceMedia } from "./media";
 import { createRegisteredExperience, getExperienceRegistration, validateExperienceConfiguration } from "./registry";
 import { createExperienceEventId, useExperienceRuntime } from "./runtime";
@@ -135,6 +140,10 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
         if (loaded.manifest.id !== registration.id || loaded.manifest.version !== registration.moduleVersion) {
           throw new Error(`Experience registration mismatch for ${registration.id}.`);
         }
+        const lifecycleErrors = validateExperienceManifestLifecycle(loaded.manifest);
+        if (lifecycleErrors.length > 0) {
+          throw new Error(`Experience lifecycle manifest is invalid: ${lifecycleErrors.join(" ")}`);
+        }
         setModule(loaded);
       })
       .catch((reason: unknown) => {
@@ -247,9 +256,48 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
     ? entitlementResult.snapshot
     : undefined;
 
-  const submitHostEvent = (eventType: string, properties: JsonObject = {}, idempotencyKey?: string) => {
-    if (!experience || !module) return;
-    const event: ExperienceLifecycleEvent = {
+  const reportRecoverable = (code: string, safeContext?: JsonObject) => {
+    try {
+      const result = runtime.recoverableErrorReporter.report({
+        code,
+        experienceId: experience?.id ?? "experience-unresolved",
+        moduleId: module?.manifest.id ?? registration?.id ?? "module-unresolved",
+        safeContext,
+      });
+      if (result && typeof (result as Promise<void>).catch === "function") {
+        void (result as Promise<void>).catch(() => undefined);
+      }
+    } catch {
+      // Diagnostics are best-effort and must never break an otherwise successful Experience action.
+    }
+  };
+
+  const deliverBrowserEvent = (event: ExperienceLifecycleEvent) => {
+    try {
+      const result = runtime.eventSink.submit(event);
+      if (result && typeof (result as Promise<void>).catch === "function") {
+        void (result as Promise<void>).catch((reason: unknown) => {
+          reportRecoverable("experience.activity_delivery_failed", {
+            eventType: event.eventType,
+            message: reason instanceof Error ? reason.message.slice(0, 160) : "Experience activity delivery failed.",
+          });
+        });
+      }
+    } catch (reason) {
+      reportRecoverable("experience.activity_delivery_failed", {
+        eventType: event.eventType,
+        message: reason instanceof Error ? reason.message.slice(0, 160) : "Experience activity delivery failed.",
+      });
+    }
+  };
+
+  const buildBrowserEvent = (
+    eventType: ExperienceLifecycleEvent["eventType"],
+    properties: JsonObject,
+    idempotencyKey?: string,
+  ): ExperienceLifecycleEvent | null => {
+    if (!experience || !module) return null;
+    return {
       eventId: createExperienceEventId(),
       eventType,
       occurredAt: new Date().toISOString(),
@@ -265,7 +313,22 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
       idempotencyKey,
       properties,
     };
-    void runtime.eventSink.submit(event);
+  };
+
+  const submitHostEvent = (
+    eventType: "experience.started" | "experience.premium_feature_requested",
+    properties: JsonObject = {},
+    idempotencyKey?: string,
+  ) => {
+    const validation = validateExperienceHostEvent(eventType, properties);
+    if (!validation.ok) {
+      reportRecoverable("experience.host_event_rejected", { eventType, reason: validation.reason.slice(0, 160) });
+      return false;
+    }
+    const event = buildBrowserEvent(eventType, validation.properties, idempotencyKey);
+    if (!event) return false;
+    deliverBrowserEvent(event);
+    return true;
   };
 
   useEffect(() => {
@@ -274,22 +337,7 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
     const key = `${experience.id}:${module.manifest.id}:${accessMode}:${slot}`;
     if (startedEventKey.current === key) return;
     startedEventKey.current = key;
-    const event: ExperienceLifecycleEvent = {
-      eventId: createExperienceEventId(),
-      eventType: "experience.started",
-      occurredAt: new Date().toISOString(),
-      source: "experience-browser",
-      trust: "browser-observed",
-      schemaVersion: 1,
-      organizationId: effectiveOrganizationId,
-      identityId: currentUser?.uid,
-      customerId,
-      experienceId: experience.id,
-      moduleId: module.manifest.id,
-      moduleVersion: module.manifest.version,
-      properties: { accessMode, slot },
-    };
-    void runtime.eventSink.submit(event);
+    submitHostEvent("experience.started", { accessMode, slot });
   }, [accessMode, currentUser?.uid, customerId, customerResult, effectiveOrganizationId, experience, module, runtime.eventSink, slot]);
 
   if (!registration) {
@@ -396,10 +444,47 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
       navigate(`${destination}?capability=${encodeURIComponent(capabilityKey)}`);
     },
     submitEvent(name, properties = {}, idempotencyKey) {
-      const definition = module.manifest.eventDefinitions.find((item) => item.name === name);
-      if (!definition || definition.source !== "browser") return false;
-      submitHostEvent(name, properties, idempotencyKey);
+      const validation = validateExperienceModuleEvent(module.manifest, name, properties);
+      if (!validation.ok) {
+        reportRecoverable("experience.module_event_rejected", {
+          eventType: name,
+          reason: validation.reason.slice(0, 160),
+        });
+        return false;
+      }
+      const event = buildBrowserEvent(name, validation.properties, idempotencyKey);
+      if (!event) return false;
+      deliverBrowserEvent(event);
       return true;
+    },
+    async reachMilestone(milestoneKey, actionId, evidence) {
+      const activation = module.manifest.activityDefinition.activation;
+      if (milestoneKey !== activation.milestoneKey) {
+        return { status: "unavailable", reason: "The module did not declare this activation milestone." };
+      }
+      if (!authenticated || accessMode !== "authenticated" || !effectiveOrganizationId || !customerId) {
+        return { status: "unavailable", reason: "A verified organization customer context is required for a trusted milestone." };
+      }
+      try {
+        const result = await runtime.milestoneSource.record({
+          organizationId: effectiveOrganizationId,
+          experienceId: experience.id,
+          moduleId: module.manifest.id,
+          moduleVersion: module.manifest.version,
+          milestoneKey,
+          actionId,
+          evidence,
+        });
+        if (result.status === "unavailable") {
+          reportRecoverable("experience.milestone_unavailable", { reason: result.reason.slice(0, 160) });
+        }
+        return result;
+      } catch (reason) {
+        reportRecoverable("experience.milestone_submission_failed", {
+          message: reason instanceof Error ? reason.message.slice(0, 160) : "Trusted milestone submission failed.",
+        });
+        return { status: "unavailable", reason: "Trusted milestone submission failed." };
+      }
     },
     runProtectedOperation(operation) {
       return runtime.operationSource.execute({ organizationId: effectiveOrganizationId, experienceId: experience.id, moduleId: module.manifest.id, operation, requestId: createExperienceEventId() });
@@ -418,12 +503,7 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
       return <SharedExperienceMedia asset={asset} />;
     },
     reportRecoverableError(code, safeContext) {
-      void runtime.recoverableErrorReporter.report({
-        code,
-        experienceId: experience.id,
-        moduleId: module.manifest.id,
-        safeContext,
-      });
+      reportRecoverable(code, safeContext);
     },
   };
 
@@ -447,12 +527,8 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
       <ExperienceModuleBoundary
         key={`${experience.id}:${module.manifest.id}:${normalizedPath}`}
         onError={(error) => {
-          submitHostEvent("experience.module_error", { message: error.message.slice(0, 160) });
-          void runtime.recoverableErrorReporter.report({
-            code: "experience.module_render_error",
-            experienceId: experience.id,
-            moduleId: module.manifest.id,
-            safeContext: { message: error.message.slice(0, 160) },
+          reportRecoverable("experience.module_render_error", {
+            message: error.message.slice(0, 160),
           });
         }}
       >
