@@ -31,7 +31,14 @@ for (const route of ["/survey", "/app/referrals", 'section === "surveys"', 'sect
 requireCondition(router.includes('route.path === "/app/settings" ? <CustomerLifecyclePreferencesPage />'), "Release 3 participant settings route must remain intact.");
 requireCondition(release3Contracts.includes('"survey"') && release3Contracts.includes('"referral"'), "Release 4 treatment kinds are not composed into the accepted lifecycle contract.");
 requireCondition(release3Runtime.includes('executeFeedbackInApp') && release3Runtime.includes('createRelease4FeedbackComposition'), "Release 4 feedback treatments are not composed through the durable lifecycle worker.");
-requireCondition(hosting.includes("release:'4-integration'") && hosting.includes("VITE_RELEASE4_BACKEND_READY"), "Hosting provenance/activation gate is not Release 4 aware.");
+const hostingProvenanceIsAdditive = hosting.includes("release:'4-integration'") || hosting.includes("release:'5-integration'");
+requireCondition(
+  hostingProvenanceIsAdditive
+    && hosting.includes("VITE_RELEASE4_BACKEND_READY")
+    && hosting.includes("VITE_FIREBASE_APP_CHECK_SITE_KEY")
+    && hosting.includes("backendActivated"),
+  "Hosting provenance must preserve the Release 4 backend/App Check activation gate under later-release provenance.",
+);
 requireCondition(backend.includes("R4_FEEDBACK_TOKEN_KEY_V1") && backend.includes("feedbackCommand") && backend.includes("r4QualifyReferralOnSubscription"), "Backend deployment workflow is missing Release 4 secret/export readiness checks.");
 
 if (failures.length) {
@@ -39,4 +46,4 @@ if (failures.length) {
   failures.forEach(failure => console.error(`- ${failure}`));
   process.exit(1);
 }
-console.log("Release 4 integration acceptance passed: exact R3 base, survey/referral contracts, trusted events, test-only rewards, routes, worker composition, and Firebase promotion gates are present.");
+console.log("Release 4 integration acceptance passed: exact R3 base, survey/referral contracts, trusted events, test-only rewards, routes, worker composition, and Firebase promotion gates are present, including additive later-release Hosting provenance.");

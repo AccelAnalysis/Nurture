@@ -44,13 +44,17 @@ jobs:
       - run: npm install --no-audit --no-fund
       - run: npm run typecheck && npm test && npm run test:release3 && npm run test:release4 && npm run test:experience
       - run: npx tsc -p tsconfig.analytics.json && node scripts/verify-analytics-contract.mjs
+      - name: Release 5 source and measurement acceptance
+        run: npx tsc -p tsconfig.release-5.json && node scripts/verify-release-5.mjs && node scripts/verify-release-5-hardening.mjs
       - run: npm install --prefix functions --no-audit --no-fund
       - run: npm --prefix functions run typecheck && npm --prefix functions test
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm run test:browser
+      - name: Verify Release 5 analytics browser harness
+        run: node scripts/verify-release-5-browser.mjs
       - name: Record exact Hosting build provenance
-        run: node -e "const active=process.env.VITE_RELEASE4_BACKEND_READY==='true'&&Boolean(process.env.VITE_FIREBASE_APP_CHECK_SITE_KEY);require('fs').writeFileSync('dist/release.json', JSON.stringify({commit:process.env.GITHUB_SHA,release:'4-integration',backendActivated:active})+'\n')"
+        run: node -e "const active=process.env.VITE_RELEASE4_BACKEND_READY==='true'&&Boolean(process.env.VITE_FIREBASE_APP_CHECK_SITE_KEY);require('fs').writeFileSync('dist/release.json', JSON.stringify({commit:process.env.GITHUB_SHA,release:'5-integration',backendActivated:active,analyticsActivated:false,analyticsRegistry:'5.2.0'})+'\n')"
       - uses: actions/upload-artifact@v4
         with:
           name: verified-hosting-build
@@ -99,12 +103,12 @@ jobs:
           node-version: 24
       - run: npm install --no-audit --no-fund
       - run: npx playwright install --with-deps chromium
-      - name: Verify deployed commit and backend gate
+      - name: Verify deployed Release 5 commit and backend gate
         env:
           SITE_URL: https://nurture-12398.web.app
         run: |
           curl --fail --silent --show-error --retry 4 "$SITE_URL/release.json" -o /tmp/release.json
-          node -e "const r=require('/tmp/release.json');const expected=process.env.VITE_RELEASE4_BACKEND_READY==='true'&&Boolean(process.env.VITE_FIREBASE_APP_CHECK_SITE_KEY);if(r.commit!==process.env.GITHUB_SHA||r.release!=='4-integration'||r.backendActivated!==expected)throw Error('Unexpected deployed release');console.log(r)"
+          node -e "const r=require('/tmp/release.json');const expected=process.env.VITE_RELEASE4_BACKEND_READY==='true'&&Boolean(process.env.VITE_FIREBASE_APP_CHECK_SITE_KEY);if(r.commit!==process.env.GITHUB_SHA||r.release!=='5-integration'||r.analyticsRegistry!=='5.2.0'||r.backendActivated!==expected||r.analyticsActivated!==false)throw Error('Unexpected deployed release');console.log(r)"
       - name: Browser smoke test live Firebase Hosting
         env:
           RELEASE_SMOKE_BASE_URL: https://nurture-12398.web.app
@@ -134,6 +138,6 @@ jobs:
             echo "configured=false" >> "$GITHUB_OUTPUT"
             echo "::warning::nurture.accelanalysis.com is not yet connected to this Firebase Hosting release. README documents Firebase custom-domain/DNS connection as a post-first-deploy step."
           fi
-      - name: Verify custom-domain provenance when configured
+      - name: Verify custom-domain Release 5 provenance when configured
         if: steps.probe.outputs.configured == 'true'
-        run: node -e "const r=require('/tmp/release.json');const expected=process.env.VITE_RELEASE4_BACKEND_READY==='true'&&Boolean(process.env.VITE_FIREBASE_APP_CHECK_SITE_KEY);if(r.commit!==process.env.GITHUB_SHA||r.release!=='4-integration'||r.backendActivated!==expected)throw Error('Unexpected custom-domain release');console.log(r)"
+        run: node -e "const r=require('/tmp/release.json');const expected=process.env.VITE_RELEASE4_BACKEND_READY==='true'&&Boolean(process.env.VITE_FIREBASE_APP_CHECK_SITE_KEY);if(r.commit!==process.env.GITHUB_SHA||r.release!=='5-integration'||r.analyticsRegistry!=='5.2.0'||r.backendActivated!==expected||r.analyticsActivated!==false)throw Error('Unexpected custom-domain release');console.log(r)"
