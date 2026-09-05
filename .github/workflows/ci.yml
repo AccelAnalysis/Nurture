@@ -27,5 +27,8 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Experience contract
+        run: npm run test:experience
+
       - name: Build
         run: npm run build
