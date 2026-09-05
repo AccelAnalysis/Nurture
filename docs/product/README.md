@@ -8,6 +8,7 @@ Nurture is a configurable application foundation: **Configurable Shell + Pluggab
 | --- | --- |
 | [Product specification](nurture-product-spec.md) | Canonical product intent and all 33 numbered baseline requirements |
 | [Experience module contract](experience-module-contract.md) | Host/module responsibilities, configuration, access, events, and portability |
+| [Release 1 Track B implementation](release-1-track-b.md) | Current NUR-07–NUR-09 implementation evidence, cross-track adapters, and remaining acceptance gates |
 | [Lifecycle model](lifecycle-model.md) | Customer state, event trust, automation execution, surveys, referrals, and retention |
 | [Design and media](design-and-media.md) | Apple HIG interpretation, canonical Nurture branding, stock media links, and video/YouTube requirements |
 | [Delivery and acceptance](delivery-and-acceptance.md) | Proposed releases, acceptance tests, launch gates, unresolved decisions, and baseline traceability |
