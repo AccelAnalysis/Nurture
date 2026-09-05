@@ -3,7 +3,12 @@ import { OrganizationShell, ParticipantShell, PlatformAdminShell, PublicShell } 
 import { EmptyState, LoadingState } from "../../components/ui";
 import { useOrganization } from "../../context/OrganizationContext";
 import { usePlatform } from "../../context/PlatformContext";
-import { AuthenticatedRoute, IdentityRouteBoundary, isIdentityRoute } from "../../features/identity/IdentityBoundary";
+import { BrandSiteAdminPage } from "../../features/configuration/BrandSiteAdminPage";
+import { ConfiguredPublicHome } from "../../features/configuration/ConfiguredPublicHome";
+import { PublicOrganizationScope } from "../../features/configuration/ConfigurationProvider";
+import { OrganizationOffersPage, ParticipantBillingPage, ParticipantOffersPage, PublicOffersPage, PublicOfferDetail } from "../../features/billing/pages";
+import { ExperienceHost } from "../../features/experience/ExperienceHost";
+import { AuthenticatedRoute, IdentityRouteBoundary, isIdentityRoute, OnboardingCompleteRoute } from "../../features/identity/IdentityBoundary";
 import { useAuth } from "../../features/identity/auth";
 import { OnboardingRouteBoundary } from "../../features/onboarding/OnboardingBoundary";
 import { OrganizationAdminRoute } from "../../features/organization/OrganizationAdminRoute";
@@ -12,15 +17,13 @@ import { PlatformAdminRoute } from "../../features/platform/PlatformAdminRoute";
 import { CustomerPage } from "../../pages/AppPages";
 import { AddContact, ContactDetail, OrganizationPage } from "../../pages/OrgPages";
 import { PlatformPage } from "../../pages/PlatformPages";
-import { MarketingHome, PublicExperience, PublicInfoPage, PublicOfferDetail, PublicOffersPage, PublicSurvey, ReferralLanding } from "../../pages/PublicPages";
+import { PublicInfoPage, PublicSurvey, ReferralLanding } from "../../pages/PublicPages";
 import { navigate, useRoute } from "../../router";
 import { organizationSectionCapability, platformSectionCapability } from "../../security/authorization";
 
 const publicInfoRoutes = ["/features", "/how-it-works", "/about", "/help", "/contact", "/privacy", "/terms"];
 const participantRoutes = new Set([
   "/app",
-  "/app/experience",
-  "/app/secondary",
   "/app/offers",
   "/app/notifications",
   "/app/feedback",
@@ -74,11 +77,17 @@ export function AppRouter() {
   const route = useRoute();
   const [first, second, third, fourth, fifth] = route.segments;
 
-  if (route.path === "/") return <PublicShell><MarketingHome /></PublicShell>;
+  if (route.path === "/") return <PublicShell><ConfiguredPublicHome /></PublicShell>;
   if (publicInfoRoutes.includes(route.path)) return <PublicShell><PublicInfoPage path={route.path} /></PublicShell>;
-  if (route.path === "/offers") return <PublicShell><PublicOffersPage /></PublicShell>;
-  if (first === "offers" && second) return <PublicShell><PublicOfferDetail offerId={second} /></PublicShell>;
-  if (route.path === "/experience") return <ParticipantShell mode="trial"><PublicExperience /></ParticipantShell>;
+  if (route.path === "/offers") return <PublicShell><PublicOrganizationScope>{(organizationId) => <PublicOffersPage organizationId={organizationId} />}</PublicOrganizationScope></PublicShell>;
+  if (first === "offers" && second) return <PublicShell><PublicOrganizationScope>{(organizationId) => <PublicOfferDetail organizationId={organizationId} offerId={second} />}</PublicOrganizationScope></PublicShell>;
+  if (first === "experience") {
+    return (
+      <ParticipantShell mode="public">
+        <ExperienceHost slot="primary" accessMode="public" relativePath={route.segments.slice(1).join("/")} />
+      </ParticipantShell>
+    );
+  }
   if (first === "r" && second) return <PublicShell><ReferralLanding code={second} /></PublicShell>;
   if (first === "survey" && second) return <PublicShell><PublicSurvey surveyId={second} /></PublicShell>;
 
@@ -86,13 +95,19 @@ export function AppRouter() {
   if (first === "onboarding") return <OnboardingRouteBoundary step={second} />;
 
   if (first === "app") {
+    const participantContent = second === "experience"
+      ? <ExperienceHost slot="primary" accessMode="authenticated" relativePath={route.segments.slice(2).join("/")} />
+      : second === "secondary"
+        ? <ExperienceHost slot="secondary" accessMode="authenticated" relativePath={route.segments.slice(2).join("/")} />
+        : route.path === "/app/offers" ? <ParticipantOffersPage />
+        : route.path === "/app/billing" ? <ParticipantBillingPage />
+        : participantRoutes.has(route.path)
+          ? <CustomerPage path={route.path} />
+          : <ParticipantStateView state="unavailable" title="Participant destination unavailable" description="This /app route is not registered with the participant application skeleton." />;
+
     return (
       <AuthenticatedRoute>
-        <AuthenticatedParticipant>
-          {participantRoutes.has(route.path)
-            ? <CustomerPage path={route.path} />
-            : <ParticipantStateView state="unavailable" title="Participant destination unavailable" description="This /app route is not registered with the participant application skeleton." />}
-        </AuthenticatedParticipant>
+        {["/app/offers", "/app/billing"].includes(route.path) ? <AuthenticatedParticipant>{participantContent}</AuthenticatedParticipant> : <OnboardingCompleteRoute><AuthenticatedParticipant>{participantContent}</AuthenticatedParticipant></OnboardingCompleteRoute>}
       </AuthenticatedRoute>
     );
   }
@@ -105,9 +120,12 @@ export function AppRouter() {
     }
 
     const section = fourth || "overview";
+    if (["brand", "site", "configuration"].includes(section)) return <Redirect to={`/org/${organizationId}/admin/brand-site`} />;
     const detail = fifth;
-    const capability = organizationSectionCapability[section] ?? "workspace.view";
-    const content = section === "contacts" && detail === "new"
+    const capability = section === "brand-site" ? "brand.view" : organizationSectionCapability[section] ?? "workspace.view";
+    const content = section === "brand-site" ? <BrandSiteAdminPage key={organizationId} organizationId={organizationId} />
+      : section === "offers" ? <OrganizationOffersPage organizationId={organizationId} />
+      : section === "contacts" && detail === "new"
       ? <AddContact organizationId={organizationId} />
       : section === "contacts" && detail
         ? <ContactDetail organizationId={organizationId} contactId={detail} />

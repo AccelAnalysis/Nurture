@@ -3,10 +3,18 @@ export type RegistrationEntryPoint = "public" | "offer" | "trial" | "organizatio
 export interface RegistrationHandoff {
   entryPoint: RegistrationEntryPoint;
   returnTo?: string;
+  organizationId?: string;
   invitationId?: string;
   referralCode?: string;
   offerId?: string;
+  source?: string;
 }
 
-// The Identity owner defines production registration steps and profile bootstrap.
-// The skeleton only reserves the typed handoff from upstream surfaces.
+export type RegistrationState =
+  | "idle"
+  | "capturing-lead"
+  | "creating-identity"
+  | "bootstrapping-customer"
+  | "requesting-verification"
+  | "complete"
+  | "error";

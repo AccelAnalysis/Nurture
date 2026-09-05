@@ -1,0 +1,57 @@
+# Release 1 integration and activation record
+
+Date: 2026-09-05. Repository: AccelAnalysis/Nurture. Firebase project: nurture-12398.
+
+## Status and scope
+
+This change integrates Tracks A–F and prepares a **Hosting-only integration release**. It is **not** a claim that Release 1's commercial end-to-end acceptance gate is complete. The preflight discovered provider and integration blockers described below. No customer was charged, no live Stripe mode was enabled, and no outreach was sent.
+
+## Track reconciliation
+
+| Track | PR | Preserved ownership and reconciliation |
+| --- | --- | --- |
+| A | #7 | Canonical configured public shell, Brand & Site editor, approved host scope, draft/extension contracts. Published Experience and public billing now use the same organization scope. Browser-local configuration is development-only, never production publication authority. |
+| B | #6 | Primary/secondary module registry, public versus trial state, module/deep routing, media host and entitlement projector. Reference offer capability keys now match D. A protected operation adapter keeps premium content off the browser bundle and independently checks current server grants. |
+| C | #11 | Registration, verification, recovery, stable identity profile, onboarding and authenticated route boundary. Onboarding gates participant Experiences, not commercial account routes. Old sessionStorage demo identities cannot become production admins. Fixed stale profile reads racing a sign-out/session change. |
+| D | #10 | All commercial routes, Stripe test-mode Functions, immutable Offer versions, provider reconciliation and retry handling. Removed duplicate role presets and duplicate unsafe Customer resolver. Consumes E authorization/binding/audit and F event validation. |
+| E | #8 | Canonical organization capabilities, separate platform claims, audit sanitization, integration and tenant-binding ports. Billing uses the same role contract. Only active organizations and exactly one active tenant Customer can enter protected handlers. |
+| F | #9 | Browser lifecycle adapters and schema/source validation. Pure contracts now live in shared/analytics with compatibility exports, so browser and Functions consume one source. Browser subscription authority remains rejected. |
+
+Track commits remain parents/ancestors of the integration branch. Merge the integration PR with **merge**, not squash/rebase, so #6–#11 remain recognizable in GitHub history. Do not merge the unrelated legacy skeleton PR #3.
+
+## Evidence from Firebase preflight
+
+The inspection authenticated successfully with the repository's existing deployment secret. Hosting reported the existing default site `nurture-12398` and its `web.app` URL.
+
+- Inspection run: https://github.com/AccelAnalysis/Nurture/actions/runs/33965479106
+- Backend preflight run: https://github.com/AccelAnalysis/Nurture/actions/runs/33965561452
+- Firestore listing returned `SERVICE_DISABLED` for `firestore.googleapis.com`.
+- Attempting to enable that API returned `PERMISSION_DENIED` for `serviceusage.services.enable` to `firebase-adminsdk-fbsvc@nurture-12398.iam.gserviceaccount.com`.
+- Functions listing returned `SERVICE_DISABLED` for `cloudfunctions.googleapis.com`.
+- Authentication configuration inspection returned HTTP 404; provider readiness was not established.
+
+The inspection jobs used continue-on-error to collect all findings. Their overall green status is **not a passing backend readiness gate**. No database edition/location could be confirmed, and no database or production security rules were created/deployed.
+
+## Hosting safety posture
+
+`VITE_RELEASE1_BACKEND_READY` defaults false and remains false in the Hosting release workflow. This is an availability gate, not an authorization mechanism. Real authentication, server rules and callable authorization remain mandatory even after it is enabled. `VITE_ENABLE_DEMO=true` can enable local fixtures only under a Vite development build; it has no effect in production builds.
+
+Public branding and the reference Experience can load without server writes. Account/checkout actions report unavailable or remain disabled. Local preview Offer amounts are explicitly illustrative. Browser configuration mutations cannot claim a production publication. Public visitor events remain browser-observed and do not establish purchases or entitlements.
+
+## Acceptance still required before backend activation
+
+1. An authorized project administrator must enable the required APIs, confirm the existing Firestore database edition and location (or explicitly provision the intended database), and establish appropriate function-deployment permissions. Do not guess a database edition or create a parallel project.
+2. Finish A/E's asynchronous durable configuration repository: trusted Brand & Site draft/publish commands, immutable versions with concurrency protection, atomic audit/event writes, and a server-backed public published-config reader. The current production reader deliberately uses safe shipped defaults; it does not persist admin edits.
+3. Finish C/E's trusted organization-Customer bootstrap/link and real organization membership/context loading. Global `identityCustomers/{uid}` is not tenant membership or a tenant Customer. Never create this association based only on an untrusted URL, email match, or browser profile ID. Connect C's onboarding bridge to the resolved published host definition for nonempty module requirements.
+4. Implement and run edition-appropriate Firestore rule/emulator tests for self-profile fields, onboarding, tenant isolation, membership/claims separation, and denial of client writes to subscriptions, entitlements, publication, audit and authoritative lifecycle records. Deploy and verify those rules before enabling browser persistence.
+5. Deploy Auth and Functions using existing project credentials; configure Stripe **test** secrets, mapped test Prices and the signed webhook endpoint. The new reference handlers currently support the trusted default registry instance; server-published custom instance support must converge with step 2. Verify replay/out-of-order webhook behavior against actual test subscriptions.
+6. Finish trusted ingestion of F's browser submissions with rate limits, verified organization/customer binding and durable event persistence. The billing domain already validates its durable events against the shared schema; browser collection is not equivalent to durable trusted ingestion.
+7. Run the full acceptance journey: authorized organization configure → publish → public try → register/verify → test Checkout → signed webhook → onboard → premium server operation; negative tests must deny forged/expired/cross-tenant access. Verify real YouTube playback/error/fallback behavior and keyboard/mobile accessibility with deployed services.
+
+Only after these gates pass should the backend availability flag be enabled and Release 1 marked complete. Hosting deployment alone does not close them.
+
+## Validation and rollback
+
+Run `npm run typecheck`, `npm test`, `npm run test:experience`, the analytics compiler/verifier, `npm run build`, Functions typecheck/tests, and `npm run test:browser` with Node 24. Browser evidence is uploaded by CI. The browser test covers public completion, handoff, canonical N logo, narrow-screen reflow, stale demo-role forgery rejection and ignored browser-forged public configuration; it does not impersonate an end-to-end Stripe or rules test.
+
+A Hosting release includes `release.json` with its commit SHA and explicit backend-activation status. Roll back through Firebase Hosting release history, or redeploy the last known-good main commit using the same Hosting-only workflow. Never expand deployment to Functions/rules/Auth simply because Hosting succeeds.

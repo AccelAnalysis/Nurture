@@ -12,23 +12,29 @@ export function PlatformAdminRoute({
   capability?: PlatformCapability;
   children: ReactNode;
 }) {
-  const { currentUser, loading } = useAuth();
-  const { can, authorizationSource } = usePlatform();
+  const { currentUser, loading: authLoading } = useAuth();
+  const {
+    can,
+    authorizationSource,
+    loading: platformLoading,
+    error,
+  } = usePlatform();
 
-  if (loading) return <LoadingState />;
+  if (authLoading || platformLoading) return <LoadingState label="Resolving platform access…" />;
   if (!currentUser) {
     queueMicrotask(() => navigate(`/sign-in?returnTo=${encodeURIComponent(window.location.pathname)}`, true));
     return <LoadingState label="Preparing sign in…" />;
   }
   if (!can(capability)) {
+    const description = error
+      ? "Nurture could not validate this account's server-issued platform authorization. Sign in again or ask a platform administrator to review the account."
+      : authorizationSource === "none"
+        ? "This account has no server-issued Nurture platform role. Organization ownership or membership does not grant platform authority."
+        : "Your Nurture platform role does not include the capability required for this destination.";
+
     return (
       <div className="content-width access-state">
-        <EmptyState
-          title="Platform access required"
-          description={authorizationSource === "server-claims-pending"
-            ? "This account has no resolved server-authoritative Nurture platform role. Platform access must ultimately come from Firebase custom claims or an equivalent trusted backend source."
-            : "Your Nurture platform role does not include the capability required for this destination."}
-        />
+        <EmptyState title="Platform access required" description={description} />
       </div>
     );
   }

@@ -1,0 +1,24 @@
+{
+  "name": "nurture-functions",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "lib/functions/src/index.js",
+  "engines": {
+    "node": "22"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && node --test lib/functions/src/billing/pricing.test.js lib/functions/src/billing/reconciliation.test.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^14.3.0",
+    "firebase-functions": "^7.3.2",
+    "stripe": "^22.6.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "typescript": "^7.0.2"
+  }
+}
