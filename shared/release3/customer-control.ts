@@ -3,8 +3,8 @@ import type {
   CommunicationChannel,
   CommunicationPurpose,
   ConsentState,
-} from "../customer/contracts";
-import type { ContactabilitySummary, LifecycleChannel, Release3ReasonCode } from "./contracts";
+} from "../customer/contracts.js";
+import type { ContactabilitySummary, LifecycleChannel, Release3ReasonCode } from "./contracts.js";
 
 export interface LifecycleCustomerPreferences {
   organizationId: string;
@@ -67,7 +67,7 @@ export function evaluateContactability(input: {
   checkedAt: string;
 }): ContactabilitySummary {
   const reasons: Release3ReasonCode[] = [];
-  const r2Channel: CommunicationChannel = input.channel === "email" ? "email" : "email";
+  const r2Channel: CommunicationChannel = "email";
   const r2Purpose: CommunicationPurpose = input.purpose === "promotional" ? "marketing" : "service";
   const consent = consentStateFor(input.consentFacts, r2Channel, r2Purpose);
 
