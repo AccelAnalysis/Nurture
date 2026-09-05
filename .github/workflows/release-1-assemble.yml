@@ -1,0 +1,96 @@
+name: Assemble and validate Release 1
+on:
+  push:
+    branches: [release/1-integration]
+    paths: [.github/workflows/release-1-assemble.yml]
+permissions:
+  contents: write
+jobs:
+  assemble:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Assemble reviewed source and preserve all six track histories
+        shell: bash
+        run: |
+          mkdir /tmp/r1-reviewed-deltas
+          cp scripts/release-1-delta-*.json /tmp/r1-reviewed-deltas/
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git checkout --detach 8ffd6476b8b6a3fc901e0f8c4f301418dbe89544
+          for sha in d02744a581a12c8a1934edc507d1709d14a0ec3e 5d671dcbe5514415b9da9c5de3c51a010b18faa5 8a61e614cc37c995607595bc14e4e4c5fa8847ae 70d15275eac4e0ae8413afe0a575ac932cbd2edd d7596600ea1828bc4825251349d96475e344176d e773be0661516317bd514252e357346e3c244016; do
+            git merge --no-ff -X ours -m 'Intermediate only; exact reviewed reconciliation follows' "$sha"
+          done
+          python3 - <<'PY'
+          import json, pathlib, subprocess
+          def git(*args, data=None):
+              return subprocess.check_output(['git', *args], input=data).decode().strip()
+          parts=sorted(pathlib.Path('/tmp/r1-reviewed-deltas').glob('*.json'))
+          assert len(parts)==6, 'All six reviewed delta segments are required'
+          expected='366132ef7fc1ef1a2774e14057fbc76fe2295836'
+          seen=set()
+          for part in parts:
+              manifest=json.loads(part.read_text())
+              assert manifest['tree']==expected
+              for item in manifest['files']:
+                  path=item['path']
+                  assert path not in seen and not pathlib.PurePosixPath(path).is_absolute() and '..' not in pathlib.PurePosixPath(path).parts
+                  seen.add(path)
+                  if 'result' not in item:
+                      sha=item['sha']
+                  else:
+                      if item['sha'] is None:
+                          content=item['text']
+                      else:
+                          lines=subprocess.check_output(['git','cat-file','blob',item['sha']]).decode().splitlines(keepends=True)
+                          for start,end,replacement in reversed(item['edits']):
+                              lines[start:end]=[replacement]
+                          content=''.join(lines)
+                      sha=git('hash-object','-w','--stdin',data=content.encode())
+                      assert sha==item['result'], f'Reviewed content mismatch: {path}, got {sha}'
+                  git('update-index','--add','--cacheinfo',item.get('mode','100644'),sha,path)
+              for path in manifest['delete']:
+                  git('update-index','--force-remove',path)
+          actual=git('write-tree')
+          assert actual==expected, f'Reviewed tree mismatch: {actual}'
+          print('Exact reviewed tree verified:', actual)
+          PY
+          TREE=$(git write-tree)
+          COMMIT=$(git commit-tree "$TREE" -p "$GITHUB_SHA" -p d02744a581a12c8a1934edc507d1709d14a0ec3e -p 5d671dcbe5514415b9da9c5de3c51a010b18faa5 -p 8a61e614cc37c995607595bc14e4e4c5fa8847ae -p 70d15275eac4e0ae8413afe0a575ac932cbd2edd -p d7596600ea1828bc4825251349d96475e344176d -p e773be0661516317bd514252e357346e3c244016 -m 'Release 1: reconcile Tracks A-F with gated Hosting and shared trust contracts')
+          git reset --hard "$COMMIT"
+          git checkout -B release/1-integration "$COMMIT"
+          git push origin HEAD:release/1-integration
+          echo "ASSEMBLED_COMMIT=$COMMIT" >> "$GITHUB_ENV"
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund && npm install --prefix functions --no-audit --no-fund
+      - name: Combined web and backend gates
+        run: |
+          npm run typecheck
+          npm test
+          npm run test:experience
+          npx tsc -p tsconfig.analytics.json
+          node scripts/verify-analytics-contract.mjs
+          npm --prefix functions run typecheck
+          npm --prefix functions test
+          npm run build
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Browser verification
+        run: npm run test:browser
+      - name: Record credential-free source history
+        if: always()
+        run: git bundle create /tmp/r1-integrated.bundle --all
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: r1-integration-evidence
+          path: |
+            test-results/release-1
+            /tmp/r1-integrated.bundle
+          include-hidden-files: false
+          retention-days: 3
