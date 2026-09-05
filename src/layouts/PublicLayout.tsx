@@ -4,10 +4,11 @@ import { publicNavigation, footerNavigation } from '../app/navigation';
 import { DropdownMenu, LinkButton } from '../components/ui';
 import { Icon } from '../components/Icon';
 import { useAuth } from '../providers/AuthProvider';
+import nurtureLogo from '../../brand/logo/nurture-n.svg';
 export function Brand() {
   return (
     <Link to="/" className="brand" aria-label="Nurture home">
-      <Icon name="leaf" size={28} />
+      <img src={nurtureLogo} alt="" width={32} height={32} />
       <span>Nurture</span>
     </Link>
   );

@@ -4,6 +4,12 @@ A general-purpose application hub organized around a seven-stage customer lifecy
 
 This repository retains the existing React + TypeScript + Vite frontend and Firebase infrastructure. Project: **`nurture-12398`**. Production domain: **`nurture.accelanalysis.com`**. Hosting remains Firebase Hosting; no replacement service or new Firebase project is required.
 
+## Brand system
+
+The shared Nurture brand system lives in [`brand/`](brand/README.md). It contains the canonical Nurture **N** logo, platform-neutral design tokens, CSS variables and glass-material fallbacks, accessibility rules, and a static visual preview.
+
+All app modules and future builds should consume the shared brand assets rather than creating local copies of colors, radii, typography, glass values, or logo artwork. The application imports the canonical tokens and logo directly; `src/styles-brand.css` maps component semantics to those shared tokens.
+
 ## Run the isolated walkthrough
 
 Use Node 24, matching GitHub Actions.

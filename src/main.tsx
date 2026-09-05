@@ -10,6 +10,8 @@ import { NotificationProvider } from './providers/NotificationProvider';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import './styles.css';
 import './styles-responsive.css';
+import '../brand/tokens.css';
+import './styles-brand.css';
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ErrorBoundary>

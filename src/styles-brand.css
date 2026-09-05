@@ -1,0 +1,56 @@
+/* Component aliases consume the shared brand source; no duplicate brand palette. */
+:root,
+:root[data-theme],
+:root:not([data-theme='light']) {
+  font-family: var(--n-font);
+  --bg: var(--n-bg);
+  --surface: var(--n-surface);
+  --soft: color-mix(in srgb, var(--n-accent) 4%, var(--n-surface));
+  --text: var(--n-text);
+  --muted: var(--n-text-secondary);
+  --border: var(--n-border);
+  --accent: var(--n-accent);
+  --accent-hover: var(--n-accent-hover);
+  --accent-soft: color-mix(in srgb, var(--n-accent) 8%, var(--n-surface));
+  --error: color-mix(in srgb, var(--n-danger) 60%, var(--n-text));
+  --error-bg: color-mix(in srgb, var(--n-danger) 8%, var(--n-surface));
+  --warning: color-mix(in srgb, var(--n-warning) 60%, var(--n-text));
+  --warning-bg: color-mix(in srgb, var(--n-warning) 8%, var(--n-surface));
+  --shadow: 0 4px 18px color-mix(in srgb, var(--n-text) 4%, transparent);
+  color: var(--text);
+  background: var(--bg);
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+body {
+  font-size: 17px;
+}
+:root .button.primary,
+:root[data-theme] .button.primary,
+:root:not([data-theme='light']) .button.primary,
+.pipeline-stage.bridge .pipeline-number,
+.rating-options input:checked + span {
+  color: var(--n-on-accent);
+}
+.button,
+.field input,
+.field select,
+.field textarea {
+  border-radius: var(--n-radius-control);
+  min-height: var(--n-control-target);
+}
+.card {
+  border-radius: var(--n-radius-card);
+}
+.brand {
+  gap: var(--n-space-3);
+}
+.brand img {
+  display: block;
+  flex-shrink: 0;
+  object-fit: contain;
+}
