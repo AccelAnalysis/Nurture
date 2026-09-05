@@ -2,123 +2,124 @@
 
 **Requirements:** NUR-07, NUR-08, NUR-09  
 **Contract:** [Experience module contract](experience-module-contract.md)  
-**Status:** Track B implementation is converged against the completed Release 1 track contracts; deployed media and trusted-backend acceptance remain release gates.
+**Status:** Track B is reconciled against the final Release 1 A/C/D/E/F contracts. Remaining work is integration/deployment acceptance, not a parallel Experience architecture.
 
 ## Purpose
 
-Track B owns the architectural separation between Nurture and the application/Experience delivered through it:
+Track B owns the separation:
 
 **Nurture Shell + Experience Module + Entitlements**
 
-The implementation keeps an Experience replaceable without teaching the module how Nurture registration, Stripe checkout, organization administration, platform administration, or lifecycle delivery works.
+An Experience stays replaceable and does not implement its own registration, checkout, organization administration, lifecycle engine, or platform security model.
 
 ## Implemented Track B surface
 
-The browser host lives in `src/features/experience/`. Provider-neutral commercial/authorization helpers that must also be usable by trusted server code live in `shared/experience/`.
+The browser host lives in `src/features/experience/`; provider-neutral contracts that trusted server code must consume live in `shared/experience/`.
 
 | Area | Implementation |
 | --- | --- |
-| Canonical contracts | `contracts.ts` defines `Experience`, `ExperienceModule`, `ExperienceModuleManifest`, `ExperienceCapability`, server-derived `Entitlement`, media/event contracts, and cross-track adapters. |
-| Trusted registry | `registry.ts` registers developer-supplied modules by primary/secondary slot. It is not a remote-script or arbitrary-HTML loader. |
-| Organization scope | `ExperienceOrganizationSource` lets application composition supply Track A's canonical public organization ID while authenticated mode retains the selected organization scope. Track B does not duplicate hostname-to-tenant mapping. |
-| Published configuration handoff | `ExperienceDefinitionSource` allows Track A to supply a published organization-scoped `Experience`; registry defaults remain the safe fallback. Configuration is checked against the module schema before rendering. |
-| Customer handoff | `ExperienceCustomerSource` resolves the stable Nurture Customer/Profile identity separately from Firebase identity. Release 1 follows the completed C/D implementation: the stable Customer ID is global while organization scope remains explicit on Experience, billing, and entitlement records. |
-| Entitlement projection | `shared/experience/entitlements.ts` projects a trusted Track D published Offer + reconciled Subscription snapshot into Experience grants and exposes a protected-operation authorization helper. It never reads a checkout return URL. |
-| Entitlement presentation | `ExperienceEntitlementSource` accepts only a presentation snapshot marked `server-derived`. The default source is unavailable, so protected capabilities fail closed. |
-| Capability resolver | `access.ts` checks declared capability, access mode, authentication, organization/customer/Experience scope, active entitlement, expiry, and allowance for presentation. |
-| Host runtime | `ExperienceHost.tsx` loads the configured module, resolves its route/navigation, provides host services, and contains loading/unavailable/error/restricted states plus a module crash boundary. |
-| Participant routing | `/experience/*` mounts the primary module in trial mode; `/app/experience/*` mounts it authenticated; `/app/secondary/*` mounts the secondary slot authenticated. |
-| Lifecycle hook | Module browser events must be declared in the manifest and flow through `ExperienceEventSink`. Events are marked `browser-observed`; they cannot assert paid/platform authority. Track F's completed compatibility bridge consumes this hook. |
-| Onboarding handoff | `createExperienceOnboardingExtension` projects manifest requirements to Track C's concrete `{ source: "experience", namespace, steps }` extension shape. `ExperienceOnboardingBridge` remains the completion boundary. |
-| Diagnostics hook | `ExperienceRecoverableErrorReporter` is an injected platform/operations boundary and accepts safe context only. |
-| Media | `SharedExperienceMedia` supports validated YouTube, Vimeo, and direct MP4/WebM paths plus image provenance/fallback behavior. Third-party video is click-to-load. |
-| Reference capability catalog | `shared/experience/reference-capabilities.ts` publishes the exact reference module keys and the Entry/Primary/Premium fixture mapping so billing does not guess capability names. |
-| Reference primary module | `nurture.reference-assessment` is a small generic assessment fixture with trial use, authenticated continuation, one protected capability, progress handoff, events, linked stock imagery, and optional YouTube fixture. |
-| Portability fixture | `nurture.reference-checklist` is a second, different-domain module using the same host contract. It exists to prove portability, not to become a second Nurture product domain. |
+| Canonical contracts | `contracts.ts` defines `Experience`, module manifests, capabilities, entitlements, host context, media/events, and the cross-track runtime ports. |
+| Registry | `registry.ts` registers trusted developer-supplied modules in primary/secondary slots. No arbitrary remote script or HTML loader is introduced. |
+| Participant host | `/experience/*` mounts the primary module in public/trial mode; `/app/experience/*` and `/app/secondary/*` mount authenticated primary/secondary modules inside the existing participant shell. |
+| Track A configuration adapter | `configuration.ts` defines the stable `experience:<slot>:<moduleId>:<moduleVersion>` extension key, draft-extension serializer, public organization adapter, and **published-only** `ExperienceDefinitionSource` over Track A's completed opaque extension store. |
+| Customer context | `ExperienceCustomerSource` is structurally compatible with Track C's `customerScopeSource`; Customer/Profile remains distinct from Firebase identity and from tenant authority. |
+| Onboarding | The manifest exposes minimal `id` / `label` / `completion` requirements. Track C owns `experienceRequirementsToOnboardingExtension(...)`, `createExperienceOnboardingBridge(...)`, ordering, persistence, validation, and completion. |
+| Commercial projection | `shared/experience/entitlements.ts` projects Track D's trusted published Offer + reconciled subscription state into Experience grants and exposes a protected-operation authorization helper. |
+| Reference capability map | `shared/experience/reference-capabilities.ts` publishes the exact reference module capability keys plus Entry/Primary/Premium fixture mapping. |
+| Presentation access | `access.ts` fails closed and checks mode, authentication, organization/Customer/Experience scope, entitlement state/expiry, and allowance. Browser access is presentation only. |
+| Analytics/lifecycle | Track B emits browser-observed `experience.started`, `experience.premium_feature_requested`, and declared namespaced module events through `ExperienceEventSink`; Track F's completed bridge already consumes this transport. |
+| Media | Shared image/YouTube/Vimeo/direct-video rendering preserves provenance, click-to-load, accessibility/failure behavior, and no entitlement-by-video semantics. |
+| Reference modules | `Momentum Check` proves public/trial + authenticated + protected capability behavior; `Next-Step Checklist` is the different-domain portability fixture. |
 
-## Completed-track convergence
-
-Track B was reconciled against the completed A, C, D, E, and F branches before declaring its implementation ready for integration.
+## Final completed-track convergence
 
 ### Track A — Configuration + Public Shell
 
-Track A's `ConfigurationProvider.publicOrganizationId` is the canonical public host/tenant decision. Track B now exposes `ExperienceOrganizationSource` specifically so composition can pass that value into `/experience/*`; it does not maintain a second hostname table.
+Track A now provides the exact missing EXP-06 storage contract:
 
-Track A's current `OrganizationConfiguration` intentionally contains Brand/Site/metadata only. The remaining EXP-06 integration seam is therefore a **versioned Experience settings extension participating in Track A's draft/preview/publish transaction**, or an equivalent Track B published store advanced atomically by Track A publish. `ExperienceDefinitionSource` reads published state only and schema-validates it. It never reads a Track A draft.
+- opaque `ConfigurationExtension` payloads;
+- `saveDraftExtension` / `removeDraftExtension`;
+- immutable publication snapshots;
+- `getPublishedExtension` with parent configuration version metadata;
+- Brand/Site resets that preserve Track B extension drafts;
+- canonical `ConfigurationProvider.publicOrganizationId` for the public host.
+
+Track B consumes that contract through `configuration.ts`. `createTrackAExperienceDefinitionSource` reads **only** `getPublishedExtension`; draft Experience settings cannot leak into `/experience` or `/app`. The immutable Track A configuration version ID becomes `Experience.configurationVersion`. Track B does not duplicate host-to-tenant resolution.
 
 ### Track C — Identity + Customer Onboarding
 
-Track C provides the stable Nurture Customer/Profile and a structurally compatible `CustomerScopeSource`. Track D's completed trusted billing implementation reads the same stable `identityCustomers/{identityUid}.customerId` and scopes billing records separately by `organizationId`. Track B follows that concrete Release 1 implementation: it resolves the stable Customer without synthesizing an organization Customer, then independently validates organization/Experience scope on the entitlement.
+Track C's final contract resolves the stable Nurture `customerId` even when organization context is supplied; the organization value is context, not proof of tenant authority. Track B keeps the same distinction and sends organization + identity + customer context to the trusted entitlement boundary.
 
-Track C owns onboarding reconciliation/persistence/completion. Track B's manifest can define setup steps but `createExperienceOnboardingExtension` produces Track C's namespaced extension shape and leaves all completion authority with Track C. Onboarding completion is never an entitlement.
+Track C also now owns the concrete conversion and completion machinery for Experience onboarding requirements. Track B therefore intentionally does **not** maintain a second onboarding-extension adapter. Module requirements remain minimal declarations; Track C namespaces them, inserts them before the final Ready step, rejects undeclared result fields, prevents module-asserted agreement acceptance, persists progress, and emits onboarding lifecycle signals.
 
 ### Track D — Offers + Billing
 
-Track D owns `CommercialOffer`, `OfferPrice`, Stripe checkout, provider reconciliation, and `SubscriptionSnapshot`. Track B owns conversion of that trusted commercial state into Experience capability grants.
+Track D owns Offer/pricing administration, Stripe test-mode checkout, webhook reconciliation, and `SubscriptionSnapshot`. Track B owns conversion of that trusted commercial state into Experience access.
 
-`shared/experience/entitlements.ts` consumes only structural provider-neutral fields from those Track D contracts and can run in a trusted Function/server boundary. It:
+`projectCommercialEntitlements(...)`:
 
 1. requires a published Offer;
-2. requires Offer/subscription organization and Offer IDs to match;
-3. requires a valid trusted reconciliation time;
-4. grants only for a granting commercial state (`active` or `trialing` in Release 1);
-5. intersects the Offer's capability keys with the installed Experience's declared capability catalog;
-6. reports unknown/unmapped capability keys rather than silently granting them;
-7. produces organization + Customer + Experience-scoped entitlements;
-8. provides `authorizeProjectedCapability` for the protected backend operation to repeat access checks.
+2. requires Offer/subscription organization and Offer IDs to agree;
+3. requires a valid trusted reconciliation timestamp;
+4. grants only from Release 1 granting states (`active` or `trialing`);
+5. intersects Offer capability keys with the installed Experience's declared capability catalog;
+6. reports unmapped capability keys rather than granting unknown strings;
+7. produces organization + Customer + Experience-scoped grants.
 
-Track D's original reference Offer defaults used generic placeholder keys (`experience.core`, etc.). Track B now publishes `RELEASE_ONE_REFERENCE_OFFER_CAPABILITIES` with the exact Momentum Check keys; the integration branch should use those values when seeding the Track D Entry/Primary/Premium reference Offers.
+`authorizeProjectedCapability(...)` repeats organization, Customer, Experience, capability, expiry, and quota checks for a protected server operation.
+
+Track D's current reference defaults still contain generic placeholder keys (`experience.core`, `experience.progress`, `experience.premium`). Track B publishes `RELEASE_ONE_REFERENCE_OFFER_CAPABILITIES` so final integration can seed the reference Offers with the real Momentum Check keys without duplicating that vocabulary.
 
 ### Track E — Platform, Security + Operations
 
-Track E's `experience.view`, `experience.manage`, and `experience.publish` capability vocabulary is compatible with Track B. Those are **staff administration permissions**, not Customer entitlements.
+Track E's `experience.view`, `experience.manage`, and `experience.publish` are staff permissions and remain separate from participant entitlements.
 
-Track E's provider/audit contracts remain the horizontal boundary for persisted Experience settings, protected server operations, lifecycle ingestion, media/storage, and diagnostics. Firestore rules and durable audit persistence remain Track E release gates; Track B does not replace them with client checks.
+Track E now also owns `OrganizationCustomerBindingPort`. Before entitlement presentation or a protected Experience operation, trusted backend composition must bind the verified identity + trusted organization to exactly one active Customer relationship. The returned `customerId` must agree with the Track D subscription and Track B entitlement snapshot. Track B's pure server helper runs **after** that trusted binding; it does not replace it.
+
+Track E remains authoritative for Firestore rules, trusted persistence, provider ports, audit writes, and server authorization. Client `canUse` is never the security boundary.
 
 ### Track F — Analytics Instrumentation
 
-Track F already consumes the `nurture:experience-event` hook produced by Track B's default `ExperienceEventSink`. It preserves Experience/module context while treating organization, identity, and Customer values from the browser as hints until trusted binding.
+Track F already consumes Track B's `nurture:experience-event` compatibility transport. Browser organization/identity/Customer fields remain hints until trusted ingestion binds scope. Namespaced module completion is not automatically a trusted `experience.milestone_reached`; a validated backend/domain action must establish that milestone.
 
-Track B also emits the global browser-observed `experience.started` event and now emits `experience.premium_feature_requested` on an upgrade/access-options handoff. Namespaced module completion remains browser-observed; only a trusted domain/server action may promote it to `experience.milestone_reached`.
-
-## Entitlement rule
+## Entitlement trust rule
 
 The allowed sequence is:
 
-`commercial state -> trusted backend state -> entitlement -> Experience capability`
+`verified identity + trusted organization binding -> Customer relationship`
 
-The following are explicitly insufficient to grant a protected capability:
+`published Offer + reconciled subscription -> entitlement projection`
 
-- checkout success URL;
+`Customer + organization + Experience + entitlement -> protected capability`
+
+The following are never sufficient to grant protected access:
+
+- checkout success/return URL;
 - browser/local/session storage;
-- a hidden or enabled button;
-- an organization staff role;
-- Firebase authentication by itself;
-- onboarding completion by itself;
-- a browser-observed lifecycle event.
+- Firebase authentication alone;
+- staff role/capability;
+- onboarding completion;
+- browser event;
+- hidden or enabled client control.
 
-`resolveExperienceCapability` is intentionally a presentation resolver. `authorizeProjectedCapability` is the shared server-side authorization helper, but the protected Cloud Function/server handler still owns authoritative record loading and must independently bind identity, organization, Customer, Experience, and current entitlement state before returning protected data or performing a protected mutation.
+## Reference Experience
 
-## Reference Experience behavior
+The `Momentum Check` public/trial route stores only versioned browser-session progress. A trial participant can hand off to Track C registration and resume at `/app/experience/review`. Authenticated review is not a paid grant. `/app/experience/deep-dive` is the protected fixture and contains no premium payload in the browser bundle that can be uncovered by bypassing UI gating.
 
-The primary reference module is deliberately small and generic. The public/trial route allows the Momentum Check before registration and keeps only versioned session progress. On completion, trial users can hand off to registration with `/app/experience/review` as the intended return path. Registration ownership remains Track C.
+The `Next-Step Checklist` proves a different module domain can register against the same host/entitlement/event boundaries without a second lifecycle engine.
 
-Authenticated review is a non-paid capability declared by the module. `/app/experience/deep-dive` demonstrates a protected capability. Premium reference Offer mapping grants that exact capability only after Track D's trusted subscription state is projected through Track B's entitlement contract. The browser fixture contains no premium result that can be revealed by bypassing the button.
+## Acceptance evidence and remaining gates
 
-The secondary checklist fixture proves that another module domain can use the same registry, routing, access, state, and event infrastructure without adding a second lifecycle engine.
-
-## Acceptance evidence and remaining integration gates
-
-| Requirement / gate | Current evidence | Remaining gate |
+| Gate | Current Track B evidence | Remaining integrated gate |
 | --- | --- | --- |
-| NUR-07 / EXP-04 | Canonical entitlement contract, fail-closed client resolver, pure D→B commercial projector, and server authorization helper. | ACC-06 requires the trusted Function/server integration to load Track D records, project entitlements, and exercise one protected operation end to end. |
-| NUR-08 / EXP-01–03 | Manifest contract, trusted registry, dynamic module loading, participant routes, module navigation, standardized states. | Organization-selected installed modules beyond the Release 1 trusted registry are later scope. |
-| NUR-08 / EXP-05 | Namespaced browser events validated against manifest definitions; Track F bridge already accepts them. | Trusted milestone promotion still requires backend validation of the underlying domain action. |
-| NUR-08 / EXP-06 | Typed configuration schema/defaults, Track A organization source, published-definition adapter, runtime schema validation. | The integration branch must attach Experience module settings to Track A's versioned publish operation. |
-| NUR-08 / EXP-07 | Module code receives scoped host context and shared media; no vendor secrets or arbitrary runtime script/iframe HTML are accepted by the registry. | Persisted module data security rules/server handlers are required when a module begins storing durable records. |
-| NUR-08 / ACC-07 | Primary assessment and different-domain secondary checklist register against the same host contract and emit namespaced signals. | Integrated lifecycle ingestion evidence after the branches are composed. |
-| NUR-09 / EXP-08 / ACC-01 | Usable Momentum Check replaces the empty Experience placeholder and uses the canonical participant shell; shared reference capability keys are published for Offer mapping. | Integration must compose Track A scope/config, Track C Customer/onboarding, Track D subscription, and Track B entitlement adapters. |
-| NUR-09 / ACC-14 | Provider-specific media code, exact-host URL normalization, click-to-load behavior, fallback states, and the specified YouTube sample fixture are present. | **Not yet accepted:** localhost/preview/production playback, restricted-video/error-153 behavior, Vimeo/direct fixtures, captions/transcript evidence, and the complete MEDIA-06 browser matrix must be run and recorded. |
-| CI | Pull-request CI typechecks the web and shared Experience contracts and creates a production Vite build. | Browser/E2E and cross-track trusted-backend tests remain separate integration gates. |
+| NUR-07 / EXP-04 / ACC-06 | Fail-closed client resolver, D→B commercial projector, E-compatible scope model, server protected-operation helper, contract verification script. | Compose Track E tenant binding + Track D authoritative records + Track B projector in a trusted Function and prove direct premium bypass fails. |
+| NUR-08 / EXP-01–03 | Manifest, trusted registry, dynamic loading, routes/navigation, standard states, participant-shell integration. | None inside Track B for the Release 1 trusted registry; broader installation marketplace remains later scope. |
+| NUR-08 / EXP-05 | Declared namespaced signals and global Experience events; Track F compatibility is confirmed. | Trusted milestone promotion remains a backend/domain validation concern. |
+| NUR-08 / EXP-06 | Concrete Track A opaque draft/publish serializer + published-only reader + public organization adapter + schema validation. | Final branch composition must wire Track A's provider/store into `ExperienceRuntimeProvider`; no new contract is required. |
+| NUR-08 / EXP-07 | Scoped host context, shared media, no arbitrary scripts/vendor secrets. | Track E rules/server enforcement remains required when durable module data is introduced. |
+| NUR-08 / ACC-07 | Assessment + different-domain checklist use the same host contract. | Integrated event-ingestion evidence in the vertical-slice run. |
+| NUR-09 / EXP-08 / ACC-01 | Usable reference Experience, exact reference capability catalog, public/trial/authenticated paths, protected capability fixture. | Final vertical-slice composition with A/C/D/E/F. |
+| NUR-09 / ACC-14 | Provider-specific media adapter/fallback code is present. | **Still not claimed complete:** run the MEDIA-06 browser matrix on localhost, hosting preview, and production, including restricted YouTube/error 153, Vimeo/direct video, captions/equivalent content. |
+| CI | Web/shared typecheck, cross-track Experience contract verification, production Vite build. | Integrated Firebase/Functions/E2E checks occur on the converged release branch. |
 
-Do not mark the integrated Release 1 journey complete solely from Track B client rendering or branch CI. The remaining items above are composition/deployment acceptance work, not reasons for the Experience module architecture to invent duplicate identity, billing, configuration, analytics, or security systems.
+Track B is ready for integration review. The remaining gates are intentionally assigned to the combined Release 1 vertical slice and do not justify duplicating another track's implementation inside the Experience module layer.
