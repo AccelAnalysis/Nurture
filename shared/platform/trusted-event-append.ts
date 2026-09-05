@@ -4,7 +4,9 @@ import {
 } from "../analytics/core.js";
 import type {
   AnalyticsDataMode,
+  AnalyticsEventType,
   LifecycleEventEnvelope,
+  LifecycleEventSource,
   LifecycleEventSubmission,
   LifecycleSubject,
 } from "../analytics/contracts.js";
@@ -51,40 +53,110 @@ export interface LifecycleEventOutboxPort<TTransaction> {
   stage(transaction: TTransaction, record: LifecycleOutboxRecord): Promise<void>;
 }
 
+export interface LifecycleEventAdmissionInput {
+  organizationId: string;
+  eventType: AnalyticsEventType;
+  source: LifecycleEventSource;
+  dataMode: AnalyticsDataMode;
+  subjectKind: LifecycleEventEnvelope["subjectKind"];
+  subjectId: string;
+  identityId?: string;
+  customerId?: string;
+}
+
+export type LifecycleEventAdmissionDecision =
+  | { status: "allowed" }
+  | { status: "denied"; reason: string; retryAfterSeconds?: number };
+
+/**
+ * E-owned rate/abuse boundary. The concrete backend implementation may use
+ * tenant/source/subject buckets, App Check signals, or other trusted context,
+ * but it must fail closed when it cannot make an admission decision. It must
+ * never rely on browser-supplied role, tenant, or commercial claims.
+ */
+export interface LifecycleEventAdmissionPort {
+  admit(input: LifecycleEventAdmissionInput): Promise<LifecycleEventAdmissionDecision>;
+}
+
 export type TrustedEventAppendErrorCode =
   | "binding-unavailable"
   | "scope-mismatch"
   | "identity-required"
-  | "source-mismatch";
+  | "source-mismatch"
+  | "rate-limited";
 
 export class TrustedEventAppendError extends Error {
   constructor(
     public readonly code: TrustedEventAppendErrorCode,
     message: string,
+    public readonly retryAfterSeconds?: number,
   ) {
     super(message);
     this.name = "TrustedEventAppendError";
   }
 }
 
-export function lifecycleEventDedupeKey(event: Pick<LifecycleEventEnvelope, "organizationId" | "dataMode" | "idempotencyKey">): string {
+export function lifecycleEventDedupeKey(
+  event: Pick<LifecycleEventEnvelope, "organizationId" | "dataMode" | "idempotencyKey">,
+): string {
   return [event.organizationId, event.dataMode, event.idempotencyKey]
     .map((value) => encodeURIComponent(value))
     .join(":");
 }
 
-function assertHintDoesNotContradictScope(submission: LifecycleEventSubmission, organizationId: string): void {
+function assertHintDoesNotContradictScope(
+  submission: LifecycleEventSubmission,
+  organizationId: string,
+): void {
   if (submission.organizationIdHint && submission.organizationIdHint !== organizationId) {
-    throw new TrustedEventAppendError("scope-mismatch", "Untrusted organization hint contradicts the verified organization scope.");
+    throw new TrustedEventAppendError(
+      "scope-mismatch",
+      "Untrusted organization hint contradicts the verified organization scope.",
+    );
   }
+}
+
+function admissionInput(event: LifecycleEventEnvelope): LifecycleEventAdmissionInput {
+  return {
+    organizationId: event.organizationId,
+    eventType: event.eventType,
+    source: event.source,
+    dataMode: event.dataMode,
+    subjectKind: event.subjectKind,
+    subjectId: event.subjectId,
+    identityId: event.identityId,
+    customerId: event.customerId,
+  };
 }
 
 export class SecureLifecycleEventAppender {
   constructor(
     private readonly bindingPort: OrganizationCustomerBindingPort,
     private readonly store: DurableLifecycleEventStore,
+    private readonly admissionPort: LifecycleEventAdmissionPort,
     private readonly now: () => string = () => new Date().toISOString(),
   ) {}
+
+  private async admit(event: LifecycleEventEnvelope): Promise<void> {
+    let decision: LifecycleEventAdmissionDecision;
+    try {
+      decision = await this.admissionPort.admit(admissionInput(event));
+    } catch (error) {
+      throw new TrustedEventAppendError(
+        "rate-limited",
+        error instanceof Error
+          ? `Event admission unavailable: ${error.message}`
+          : "Event admission unavailable.",
+      );
+    }
+    if (decision.status === "denied") {
+      throw new TrustedEventAppendError(
+        "rate-limited",
+        decision.reason || "Lifecycle event admission denied.",
+        decision.retryAfterSeconds,
+      );
+    }
+  }
 
   /**
    * Authenticated browser signals are always bound as source=browser. A client
@@ -104,10 +176,16 @@ export class SecureLifecycleEventAppender {
       correlationId: input.submission.correlationId,
     });
     if (binding.status !== "ready") {
-      throw new TrustedEventAppendError("binding-unavailable", `Organization/customer binding is unavailable: ${binding.reason}.`);
+      throw new TrustedEventAppendError(
+        "binding-unavailable",
+        `Organization/customer binding is unavailable: ${binding.reason}.`,
+      );
     }
     if (!bindingMatchesScope(binding.binding, input.organizationId, input.identityId)) {
-      throw new TrustedEventAppendError("scope-mismatch", "Resolved customer binding does not match the verified request scope.");
+      throw new TrustedEventAppendError(
+        "scope-mismatch",
+        "Resolved customer binding does not match the verified request scope.",
+      );
     }
 
     const event = bindLifecycleEvent(input.submission, {
@@ -119,6 +197,7 @@ export class SecureLifecycleEventAppender {
       customerId: binding.binding.customerId,
       dataMode: input.dataMode,
     });
+    await this.admit(event);
     return this.store.appendIfAbsent(event);
   }
 
@@ -141,7 +220,10 @@ export class SecureLifecycleEventAppender {
 
     let customerId = input.customerId;
     if (customerId && !input.identityId) {
-      throw new TrustedEventAppendError("identity-required", "Customer-scoped domain events require a verified identity/customer binding.");
+      throw new TrustedEventAppendError(
+        "identity-required",
+        "Customer-scoped domain events require a verified identity/customer binding.",
+      );
     }
     if (input.identityId) {
       const binding = await this.bindingPort.resolve({
@@ -149,15 +231,27 @@ export class SecureLifecycleEventAppender {
         identityId: input.identityId,
         correlationId: input.submission.correlationId,
       });
-      if (binding.status !== "ready" || !bindingMatchesScope(binding.binding, input.organizationId, input.identityId)) {
-        throw new TrustedEventAppendError("binding-unavailable", "Verified identity does not have one active customer binding in this organization.");
+      if (
+        binding.status !== "ready"
+        || !bindingMatchesScope(binding.binding, input.organizationId, input.identityId)
+      ) {
+        throw new TrustedEventAppendError(
+          "binding-unavailable",
+          "Verified identity does not have one active customer binding in this organization.",
+        );
       }
       if (customerId && customerId !== binding.binding.customerId) {
-        throw new TrustedEventAppendError("scope-mismatch", "Requested customer does not match the canonical organization/customer binding.");
+        throw new TrustedEventAppendError(
+          "scope-mismatch",
+          "Requested customer does not match the canonical organization/customer binding.",
+        );
       }
       customerId = binding.binding.customerId;
       if (input.subject.kind === "customer" && input.subject.id !== customerId) {
-        throw new TrustedEventAppendError("scope-mismatch", "Customer subject does not match the canonical organization/customer binding.");
+        throw new TrustedEventAppendError(
+          "scope-mismatch",
+          "Customer subject does not match the canonical organization/customer binding.",
+        );
       }
     }
 
@@ -170,6 +264,7 @@ export class SecureLifecycleEventAppender {
       customerId,
       dataMode: input.dataMode,
     });
+    await this.admit(event);
     return this.store.appendIfAbsent(event);
   }
 
@@ -186,11 +281,18 @@ export class SecureLifecycleEventAppender {
   }): Promise<LifecycleEventAppendResult> {
     const event = validateLifecycleEventEnvelope(input.event);
     if (event.organizationId !== input.expectedOrganizationId) {
-      throw new TrustedEventAppendError("scope-mismatch", "Event organization does not match the trusted producer scope.");
+      throw new TrustedEventAppendError(
+        "scope-mismatch",
+        "Event organization does not match the trusted producer scope.",
+      );
     }
     if (event.source !== input.expectedSource) {
-      throw new TrustedEventAppendError("source-mismatch", "Event source does not match the trusted producer route.");
+      throw new TrustedEventAppendError(
+        "source-mismatch",
+        "Event source does not match the trusted producer route.",
+      );
     }
+    await this.admit(event);
     return this.store.appendIfAbsent(event);
   }
 }
