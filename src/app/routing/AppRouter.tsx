@@ -3,7 +3,7 @@ import { OrganizationShell, ParticipantShell, PlatformAdminShell, PublicShell } 
 import { EmptyState, LoadingState } from "../../components/ui";
 import { useOrganization } from "../../context/OrganizationContext";
 import { usePlatform } from "../../context/PlatformContext";
-import { AuthenticatedRoute, IdentityRouteBoundary, isIdentityRoute } from "../../features/identity/IdentityBoundary";
+import { AuthenticatedRoute, IdentityRouteBoundary, isIdentityRoute, OnboardingCompleteRoute } from "../../features/identity/IdentityBoundary";
 import { useAuth } from "../../features/identity/auth";
 import { OnboardingRouteBoundary } from "../../features/onboarding/OnboardingBoundary";
 import { OrganizationAdminRoute } from "../../features/organization/OrganizationAdminRoute";
@@ -83,16 +83,20 @@ export function AppRouter() {
   if (first === "survey" && second) return <PublicShell><PublicSurvey surveyId={second} /></PublicShell>;
 
   if (isIdentityRoute(route)) return <IdentityRouteBoundary route={route} />;
-  if (first === "onboarding") return <OnboardingRouteBoundary step={second} />;
+  if (first === "onboarding") {
+    return <AuthenticatedRoute><OnboardingRouteBoundary step={second} /></AuthenticatedRoute>;
+  }
 
   if (first === "app") {
     return (
       <AuthenticatedRoute>
-        <AuthenticatedParticipant>
-          {participantRoutes.has(route.path)
-            ? <CustomerPage path={route.path} />
-            : <ParticipantStateView state="unavailable" title="Participant destination unavailable" description="This /app route is not registered with the participant application skeleton." />}
-        </AuthenticatedParticipant>
+        <OnboardingCompleteRoute>
+          <AuthenticatedParticipant>
+            {participantRoutes.has(route.path)
+              ? <CustomerPage path={route.path} />
+              : <ParticipantStateView state="unavailable" title="Participant destination unavailable" description="This /app route is not registered with the participant application skeleton." />}
+          </AuthenticatedParticipant>
+        </OnboardingCompleteRoute>
       </AuthenticatedRoute>
     );
   }

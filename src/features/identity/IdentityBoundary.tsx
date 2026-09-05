@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { LoadingState } from "../../components/ui";
+import { ErrorState, LoadingState } from "../../components/ui";
 import { AuthPage, InvitationPage } from "../../pages/AuthPages";
 import { navigate, type RouteState } from "../../router";
 import { useAuth } from "./auth";
@@ -42,10 +42,27 @@ export function IdentityRouteBoundary({ route }: { route: RouteState }) {
 export function AuthenticatedRoute({ children }: { children: ReactNode }) {
   const { currentUser, loading, error } = useAuth();
   if (loading) return <LoadingState />;
-  if (error) return <div className="content-width"><div className="state-panel error-state">{error}</div></div>;
+  if (error) return <div className="content-width"><ErrorState message={error} /></div>;
   if (!currentUser) {
-    queueMicrotask(() => navigate(`${identityRoutes.signIn}?returnTo=${encodeURIComponent(window.location.pathname)}`, true));
+    const returnTo = `${window.location.pathname}${window.location.search}`;
+    queueMicrotask(() => navigate(`${identityRoutes.signIn}?returnTo=${encodeURIComponent(returnTo)}`, true));
     return <LoadingState label="Preparing sign in…" />;
+  }
+  return <>{children}</>;
+}
+
+/**
+ * Participant routes require completed onboarding, but organization/platform
+ * administration and commercial routes keep their separate authorization and
+ * lifecycle rules. Demo sessions intentionally bypass this production gate.
+ */
+export function OnboardingCompleteRoute({ children }: { children: ReactNode }) {
+  const { currentUser, isDemo, loading } = useAuth();
+  if (loading) return <LoadingState />;
+  if (!isDemo && currentUser && currentUser.onboardingStatus !== "complete") {
+    const returnTo = `${window.location.pathname}${window.location.search}`;
+    queueMicrotask(() => navigate(`/onboarding?returnTo=${encodeURIComponent(returnTo)}`, true));
+    return <LoadingState label="Opening onboarding…" />;
   }
   return <>{children}</>;
 }

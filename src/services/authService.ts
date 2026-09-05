@@ -1,15 +1,16 @@
 import {
   EmailAuthProvider,
+  browserLocalPersistence,
   createUserWithEmailAndPassword,
   linkWithCredential,
   onAuthStateChanged,
+  reload,
   sendEmailVerification,
   sendPasswordResetEmail,
   setPersistence,
   signInAnonymously,
   signInWithEmailAndPassword,
   signOut as firebaseSignOut,
-  browserLocalPersistence,
   type User,
 } from "firebase/auth";
 import { auth } from "../firebase";
@@ -28,11 +29,27 @@ export const authService = {
     if (!auth) return () => undefined;
     return onAuthStateChanged(auth, callback);
   },
+  getCurrentUser() {
+    return auth?.currentUser ?? null;
+  },
   async signIn(email: string, password: string) {
     return signInWithEmailAndPassword(requireAuth(), email, password);
   },
   async register(email: string, password: string) {
-    return createUserWithEmailAndPassword(requireAuth(), email, password);
+    const instance = requireAuth();
+    if (instance.currentUser && !instance.currentUser.isAnonymous) {
+      throw new Error("A registered account is already signed in. Sign out before creating another account.");
+    }
+    if (instance.currentUser?.isAnonymous) {
+      const credential = EmailAuthProvider.credential(email, password);
+      return linkWithCredential(instance.currentUser, credential);
+    }
+    return createUserWithEmailAndPassword(instance, email, password);
+  },
+  async ensureAnonymousSession(): Promise<User> {
+    const instance = requireAuth();
+    if (instance.currentUser) return instance.currentUser;
+    return (await signInAnonymously(instance)).user;
   },
   async signInAnonymous() {
     return signInAnonymously(requireAuth());
@@ -46,7 +63,16 @@ export const authService = {
   async sendVerification() {
     const user = requireAuth().currentUser;
     if (!user) throw new Error("No authenticated user.");
-    return sendEmailVerification(user);
+    if (user.isAnonymous) throw new Error("Register the account before requesting email verification.");
+    if (user.emailVerified) return;
+    const continueUrl = typeof window !== "undefined" ? `${window.location.origin}/verify-email` : undefined;
+    return sendEmailVerification(user, continueUrl ? { url: continueUrl, handleCodeInApp: false } : undefined);
+  },
+  async reloadCurrentUser() {
+    const user = requireAuth().currentUser;
+    if (!user) throw new Error("No authenticated user.");
+    await reload(user);
+    return user;
   },
   async resetPassword(email: string) {
     return sendPasswordResetEmail(requireAuth(), email);
