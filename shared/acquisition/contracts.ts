@@ -22,7 +22,22 @@ export type AcquisitionCatalogId =
   | "R2-CHECKOUT";
 
 export type AcquisitionSubjectKind = "lead" | "customer";
-export type AcquisitionMessagePurpose = "service" | "promotional";
+
+/**
+ * Structurally identical to Track D's canonical CommunicationPurpose. Keep this
+ * local alias only so the tracks can compile independently; the release finisher
+ * may replace it with D's exported type during composition.
+ */
+export type AcquisitionMessagePurpose = "transactional" | "marketing";
+
+/** Structurally identical to Track D's approved Release 2 template IDs. */
+export type AcquisitionCommunicationTemplateId =
+  | "registration-welcome"
+  | "onboarding-reminder"
+  | "lead-follow-up"
+  | "activation-invitation"
+  | "trial-conversion"
+  | "checkout-recovery";
 
 export type AcquisitionPredicateKey =
   | "subject.active"
@@ -49,8 +64,9 @@ export type AcquisitionSchedule =
 
 export interface AcquisitionEmailAction {
   kind: "email";
-  templateId: string;
-  templateVersionId: string;
+  templateId: AcquisitionCommunicationTemplateId;
+  /** Published Track D template version pinned at enrollment. */
+  templateVersion: number;
   purpose: AcquisitionMessagePurpose;
 }
 
@@ -264,8 +280,8 @@ export interface AcquisitionStatePort {
 export interface AcquisitionEmailEligibilityInput extends AcquisitionStateReadInput {
   effectId: string;
   stepId: string;
-  templateId: string;
-  templateVersionId: string;
+  templateId: AcquisitionCommunicationTemplateId;
+  templateVersion: number;
   purpose: AcquisitionMessagePurpose;
 }
 
@@ -426,7 +442,10 @@ export interface AcquisitionRuntimeStore {
     reason: AcquisitionReasonCode;
     detail?: string;
   }): Promise<number>;
-  finalizeEnrollmentIfSettled(input: { enrollmentId: string; at: string }): Promise<AcquisitionEnrollment | null>;
+  finalizeEnrollmentIfSettled(input: {
+    enrollmentId: string;
+    at: string;
+  }): Promise<AcquisitionEnrollment | null>;
   getOperationsSnapshot(input: {
     organizationId?: string;
     dataMode?: AnalyticsDataMode;
