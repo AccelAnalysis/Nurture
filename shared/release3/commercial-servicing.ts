@@ -1,5 +1,5 @@
-import type { CommercialOffer, SubscriptionSnapshot } from "../billing/contracts";
-import type { CommercialServicingSummary, ExpansionOfferCandidate, PaymentHealth } from "./contracts";
+import type { CommercialOffer, SubscriptionSnapshot } from "../billing/contracts.js";
+import type { CommercialServicingSummary, ExpansionOfferCandidate, PaymentHealth } from "./contracts.js";
 
 export interface CommercialServicingInput {
   organizationId: string;
@@ -20,6 +20,13 @@ export function paymentHealthFromSubscription(input: CommercialServicingInput): 
   return "unknown";
 }
 
+function servicingSubscriptionState(subscription: SubscriptionSnapshot | null): CommercialServicingSummary["subscriptionState"] {
+  if (!subscription) return "none";
+  // Stripe exposes `incomplete_expired`; Release 3 treats it as the terminal form of
+  // incomplete setup rather than inventing a second access-bearing state.
+  return subscription.status === "incomplete_expired" ? "incomplete" : subscription.status;
+}
+
 export function toCommercialServicingSummary(input: CommercialServicingInput): CommercialServicingSummary {
   const subscription = input.subscription ?? null;
   const cancelled = subscription?.status === "canceled";
@@ -34,7 +41,7 @@ export function toCommercialServicingSummary(input: CommercialServicingInput): C
           : "none";
   return {
     ...(subscription ? { subscriptionId: subscription.id, offerId: subscription.offerId, offerVersion: subscription.offerVersion } : {}),
-    subscriptionState: subscription?.status ?? "none",
+    subscriptionState: servicingSubscriptionState(subscription),
     entitlementKeys: [...new Set(input.entitlementKeys)].sort(),
     ...(subscription?.currentPeriodEnd ? { nextRenewalAt: subscription.currentPeriodEnd } : {}),
     ...(subscription ? { renewalAmountMinor: subscription.unitAmountMinor, currency: subscription.currency } : {}),
