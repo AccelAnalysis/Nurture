@@ -80,7 +80,7 @@ export function AppRouter() {
   if (first === "experience") {
     return (
       <ParticipantShell mode="trial">
-        <ExperienceHost slot="primary" accessMode="trial" relativePath={route.segments.slice(1).join("/")} />
+        <ExperienceHost slot="primary" accessMode="public" relativePath={route.segments.slice(1).join("/")} />
       </ParticipantShell>
     );
   }
