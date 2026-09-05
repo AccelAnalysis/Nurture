@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 import { Badge, Card } from "../../components/ui";
 import { Link } from "../../router";
 import type { MediaAsset, OrganizationConfiguration } from "./types";
@@ -32,12 +32,14 @@ function youtubeId(value: string) {
 
 function vimeoId(value: string) {
   try {
-    const url = new URL(value);
-    const part = url.pathname.split("/").filter(Boolean).findLast((item) => /^\d+$/.test(item));
-    return part ?? null;
+    const parts = new URL(value).pathname.split("/").filter(Boolean);
+    for (let index = parts.length - 1; index >= 0; index -= 1) {
+      if (/^\d+$/.test(parts[index])) return parts[index];
+    }
   } catch {
     return null;
   }
+  return null;
 }
 
 function MediaFallback({ asset, message }: { asset: MediaAsset; message: string }) {
@@ -146,7 +148,7 @@ export function ConfiguredMarketingHome({
   preview?: boolean;
 }) {
   const PublicLink = preview ? PreviewLink : Link;
-  const accentStyle = { "--track-a-accent": configuration.brand.accentColor } as React.CSSProperties;
+  const accentStyle = { "--track-a-accent": configuration.brand.accentColor } as CSSProperties;
   return (
     <div className="track-a-configured-home" style={accentStyle}>
       <section className="hero content-width track-a-configured-hero">
@@ -178,7 +180,7 @@ export function ConfiguredMarketingHome({
 
 export function PublicSitePreview({ configuration }: { configuration: OrganizationConfiguration }) {
   return (
-    <div className="track-a-preview-site" style={{ "--track-a-accent": configuration.brand.accentColor } as React.CSSProperties}>
+    <div className="track-a-preview-site" style={{ "--track-a-accent": configuration.brand.accentColor } as CSSProperties}>
       <header className="track-a-preview-header">
         <ConfiguredBrand configuration={configuration} link={false} />
         <nav aria-label="Preview navigation">
