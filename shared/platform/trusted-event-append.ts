@@ -59,7 +59,7 @@ export interface LifecycleEventAdmissionInput {
   source: LifecycleEventSource;
   dataMode: AnalyticsDataMode;
   subjectKind: LifecycleEventEnvelope["subjectKind"];
-  subjectId: string;
+  subjectId?: string;
   identityId?: string;
   customerId?: string;
 }
