@@ -1,4 +1,11 @@
-import type { Experience, ExperienceModuleRegistration, ExperienceSlot } from "./contracts";
+import type {
+  Experience,
+  ExperienceConfigurationField,
+  ExperienceModuleManifest,
+  ExperienceModuleRegistration,
+  ExperienceSlot,
+  JsonValue,
+} from "./contracts";
 
 const registrations = new Map<ExperienceSlot, ExperienceModuleRegistration>();
 
@@ -47,6 +54,27 @@ export function createRegisteredExperience(
     configurationVersion: "reference-defaults-v1",
     configuration: registration.defaultConfiguration,
   };
+}
+
+function matchesConfigurationType(value: JsonValue | undefined, field: ExperienceConfigurationField) {
+  if (value === undefined) return !field.required;
+  if (field.type === "array") return Array.isArray(value);
+  if (field.type === "object") return typeof value === "object" && value !== null && !Array.isArray(value);
+  return typeof value === field.type;
+}
+
+/**
+ * Runtime guard for Track A's published configuration handoff. It intentionally
+ * validates data, not executable schema code or administrator-supplied scripts.
+ */
+export function validateExperienceConfiguration(manifest: ExperienceModuleManifest, experience: Experience) {
+  const errors: string[] = [];
+  for (const [key, field] of Object.entries(manifest.configurationSchema)) {
+    if (!matchesConfigurationType(experience.configuration[key], field)) {
+      errors.push(`Configuration field "${key}" must be ${field.type}${field.required ? " and is required" : ""}.`);
+    }
+  }
+  return errors;
 }
 
 registerExperienceModule({
