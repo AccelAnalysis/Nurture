@@ -1,4 +1,4 @@
-import { Component, useEffect, useMemo, useState, type ErrorInfo, type ReactNode } from "react";
+import { Component, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from "react";
 import { Badge, Button, EmptyState, LoadingState, PageHeader } from "../../components/ui";
 import { useOrganization } from "../../context/OrganizationContext";
 import { Link, navigate } from "../../router";
@@ -84,12 +84,14 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
   const [publishedExperience, setPublishedExperience] = useState<PublishedExperienceState>("loading");
   const [customerResult, setCustomerResult] = useState<ExperienceCustomerResult | "loading">("loading");
   const [entitlementResult, setEntitlementResult] = useState<EntitlementSnapshotResult | "loading">("loading");
+  const startedEventKey = useRef<string | null>(null);
   const normalizedPath = normalizeRelativePath(relativePath);
   const authenticated = accessMode === "authenticated" && Boolean(currentUser);
-  const organizationId = accessMode === "authenticated" ? currentOrganizationId ?? undefined : undefined;
+  const authenticatedOrganizationId = accessMode === "authenticated" ? currentOrganizationId ?? undefined : undefined;
   const experience = publishedExperience !== "loading" && publishedExperience.status === "ready"
     ? publishedExperience.experience
     : null;
+  const effectiveOrganizationId = experience?.organizationId ?? authenticatedOrganizationId;
   const customerId = customerResult !== "loading" && customerResult.status === "ready"
     ? customerResult.customerId
     : undefined;
@@ -124,13 +126,13 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
     }
 
     if (!runtime.definitionSource) {
-      setPublishedExperience({ status: "ready", experience: createRegisteredExperience(registration, organizationId ?? null) });
+      setPublishedExperience({ status: "ready", experience: createRegisteredExperience(registration, authenticatedOrganizationId ?? null) });
       return;
     }
 
     setPublishedExperience("loading");
     runtime.definitionSource.loadPublishedExperience({
-      organizationId,
+      organizationId: authenticatedOrganizationId,
       slot,
       moduleId: registration.id,
       moduleVersion: registration.moduleVersion,
@@ -144,7 +146,7 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
         setPublishedExperience({ status: "error", reason: "The published Experience does not match the trusted module registration." });
         return;
       }
-      if (organizationId && loaded.organizationId !== organizationId) {
+      if (authenticatedOrganizationId && loaded.organizationId !== authenticatedOrganizationId) {
         setPublishedExperience({ status: "error", reason: "The published Experience belongs to a different organization scope." });
         return;
       }
@@ -160,7 +162,7 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
       });
     });
     return () => { cancelled = true; };
-  }, [organizationId, registration, runtime.definitionSource, slot]);
+  }, [authenticatedOrganizationId, registration, runtime.definitionSource, slot]);
 
   useEffect(() => {
     let cancelled = false;
@@ -170,7 +172,7 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
     }
     setCustomerResult("loading");
     runtime.customerSource.resolveCustomer({
-      organizationId,
+      organizationId: authenticatedOrganizationId,
       identityId: currentUser.uid,
     }).then((result) => {
       if (!cancelled) setCustomerResult(result);
@@ -181,7 +183,7 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
       });
     });
     return () => { cancelled = true; };
-  }, [accessMode, currentUser, organizationId, runtime.customerSource]);
+  }, [accessMode, authenticatedOrganizationId, currentUser, runtime.customerSource]);
 
   useEffect(() => {
     let cancelled = false;
@@ -200,7 +202,7 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
 
     setEntitlementResult("loading");
     runtime.entitlementSource.loadPresentationSnapshot({
-      organizationId,
+      organizationId: effectiveOrganizationId,
       identityId: currentUser.uid,
       customerId: customerResult.customerId,
       experienceId: experience.id,
@@ -214,7 +216,7 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
       });
     });
     return () => { cancelled = true; };
-  }, [accessMode, currentUser, customerResult, experience, organizationId, runtime.entitlementSource]);
+  }, [accessMode, currentUser, customerResult, effectiveOrganizationId, experience, runtime.entitlementSource]);
 
   const trustedSnapshot = entitlementResult !== "loading" && entitlementResult.status === "ready"
     ? entitlementResult.snapshot
@@ -229,7 +231,7 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
       source: "experience-browser",
       trust: "browser-observed",
       schemaVersion: 1,
-      organizationId,
+      organizationId: effectiveOrganizationId,
       identityId: currentUser?.uid,
       customerId,
       experienceId: experience.id,
@@ -243,6 +245,10 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
 
   useEffect(() => {
     if (!module || !experience) return;
+    if (accessMode === "authenticated" && customerResult === "loading") return;
+    const key = `${experience.id}:${module.manifest.id}:${accessMode}:${slot}`;
+    if (startedEventKey.current === key) return;
+    startedEventKey.current = key;
     const event: ExperienceLifecycleEvent = {
       eventId: createExperienceEventId(),
       eventType: "experience.started",
@@ -250,7 +256,7 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
       source: "experience-browser",
       trust: "browser-observed",
       schemaVersion: 1,
-      organizationId,
+      organizationId: effectiveOrganizationId,
       identityId: currentUser?.uid,
       customerId,
       experienceId: experience.id,
@@ -259,7 +265,7 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
       properties: { accessMode, slot },
     };
     void runtime.eventSink.submit(event);
-  }, [accessMode, currentUser?.uid, customerId, experience, module, organizationId, runtime.eventSink, slot]);
+  }, [accessMode, currentUser?.uid, customerId, customerResult, effectiveOrganizationId, experience, module, runtime.eventSink, slot]);
 
   if (!registration) {
     return <ParticipantStateView state="unavailable" title="Experience unavailable" description={`No trusted Experience module is registered for the ${slot} slot.`} />;
@@ -295,7 +301,7 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
     capabilityKey,
     accessMode,
     authenticated,
-    organizationId,
+    organizationId: effectiveOrganizationId,
     customerId,
     snapshot: trustedSnapshot,
   });
@@ -344,7 +350,7 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
     authenticated,
     locale,
     timeZone,
-    organizationId,
+    organizationId: effectiveOrganizationId,
     identityId: currentUser?.uid,
     customerId,
     canUse,
