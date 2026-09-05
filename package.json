@@ -13,6 +13,7 @@
     "prebuild": "npm run brand:sync",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
+    "test:experience": "node scripts/verify-experience-entitlements.mjs",
     "preview": "vite preview",
     "firebase:emulate": "npx -y firebase-tools@latest emulators:start --only hosting",
     "firebase:preview": "npm run build && npx -y firebase-tools@latest hosting:channel:deploy bootstrap --project nurture-12398 --expires 7d",
