@@ -32,6 +32,22 @@ class BindingPort implements OrganizationCustomerBindingPort {
       },
     };
   }
+
+  async resolveCustomer(input: { organizationId: string; customerId: string }): Promise<OrganizationCustomerBindingResult> {
+    if (input.organizationId !== "org-a" || input.customerId !== "customer-1") {
+      return { status: "unavailable", reason: "customer-not-linked" };
+    }
+    return {
+      status: "ready",
+      binding: {
+        organizationId: "org-a",
+        customerId: "customer-1",
+        identityId: "identity-1",
+        status: "active",
+        verifiedAt: "2026-09-05T13:00:00.000Z",
+      },
+    };
+  }
 }
 
 class EventStore implements DurableLifecycleEventStore {
@@ -225,7 +241,7 @@ describe("canonical trusted lifecycle append", () => {
     expect(result.event.customerId).toBeUndefined();
   });
 
-  it("requires trusted provider routing to match both source and tenant", async () => {
+  it("requires trusted provider routing to match source, tenant, and canonical customer scope", async () => {
     const fx = appender();
     const event: LifecycleEventEnvelope = {
       eventId: "provider-subscription-1",
@@ -253,6 +269,11 @@ describe("canonical trusted lifecycle append", () => {
       expectedOrganizationId: "org-a",
       expectedSource: "trusted_server",
     })).rejects.toMatchObject({ code: "source-mismatch" } satisfies Partial<TrustedEventAppendError>);
+    await expect(fx.append.appendTrustedEnvelope({
+      event: { ...event, eventId: "provider-forged-customer", idempotencyKey: "provider-forged-customer", customerId: "customer-2" },
+      expectedOrganizationId: "org-a",
+      expectedSource: "provider_webhook",
+    })).rejects.toMatchObject({ code: "binding-unavailable" } satisfies Partial<TrustedEventAppendError>);
     const accepted = await fx.append.appendTrustedEnvelope({
       event,
       expectedOrganizationId: "org-a",
