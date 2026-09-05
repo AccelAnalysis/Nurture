@@ -7,7 +7,7 @@ import type {
   OnboardingStepDefinitionV2,
   OnboardingStepMutationResult,
   OnboardingStepProgressStatus,
-} from "./contracts";
+} from "./contracts.js";
 
 function safePart(value: string) {
   return encodeURIComponent(value.trim());
