@@ -56,20 +56,22 @@ The actual annual charge is always labeled as billed annually. Zero-price Offers
 
 ## Checkout trust boundary
 
-`createBillingCheckoutSession` requires Firebase Authentication and resolves exactly one organization-scoped Customer by `identityId`. It never uses the Firebase UID as the Customer ID.
+`createBillingCheckoutSession` requires Firebase Authentication and resolves Track C's stable Nurture Customer profile before any provider work. It never treats the Firebase UID itself as the Customer ID. The resulting Customer ID is global to the person/profile, while every Offer, checkout, provider mapping, subscription, lifecycle event, and billing query remains explicitly scoped to the selected organization.
 
-Track C integration seam:
+Track C integration seam, aligned to its current Release 1 implementation:
 
 ```text
-organizations/{organizationId}/customers/{customerId}
+identityCustomers/{firebaseUid}
+  customerId: <stable Nurture Customer ID>
   identityId: <Firebase uid/reference>
+  status: active
 ```
 
-Track C owns creation and lifecycle of that Customer/Profile record. If there is no unique Customer match, checkout fails closed.
+Track C owns creation and lifecycle of that Customer/Profile record. Track D reads the stored `customerId`, verifies the profile matches the authenticated identity, and fails closed if the profile is absent or invalid. It does not derive the Customer ID from the UID even though Track C may currently use a deterministic bootstrap convention internally.
 
 Checkout then:
 
-1. loads the published Nurture Offer;
+1. loads the published Nurture Offer for the selected organization;
 2. selects the internal `priceId` server-side;
 3. validates the mapped Stripe Price is test mode, active, recurring, and matches amount/currency/interval;
 4. creates/reuses an organization+Customer Stripe Customer mapping;
@@ -155,7 +157,7 @@ The existing production workflow continues to deploy Hosting only. Functions are
 
 ## Verification
 
-CI now validates both packages:
+CI validates both packages:
 
 ```text
 web:       typecheck -> build
@@ -171,4 +173,4 @@ Function tests cover:
 - stale-event detection;
 - subscription started/updated/cancelled event decisions.
 
-A final integrated Release 1 acceptance test still requires the other tracks: Track C Customer bootstrap, Track E membership/rules, Track B server entitlement projection, and Track F integration of the common event store/catalog.
+The Track D branch is build-green after consuming Track C's concrete Customer profile contract. Final Release 1 integration still requires the Track C Customer bootstrap branch to merge, Track E's durable membership/rules boundary, Track B's server entitlement projection, and Track F's common event-store/ingestion boundary to converge in the integration branch.
