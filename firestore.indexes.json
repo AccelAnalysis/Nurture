@@ -122,6 +122,14 @@
         { "fieldPath": "scope.customerId", "order": "ASCENDING" },
         { "fieldPath": "scope.dataMode", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "release3Runs",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "state", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "dueAt", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": [
