@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
 import {
+  createExperienceConfigurationExtension,
+  createTrackAExperienceDefinitionSource,
+  createTrackAExperienceOrganizationSource,
+  experienceConfigurationExtensionKey,
+} from "../src/features/experience/configuration.ts";
+import {
   authorizeProjectedCapability,
   projectCommercialEntitlements,
 } from "../shared/experience/entitlements.ts";
@@ -93,4 +99,51 @@ assert.deepEqual(crossTenantProjection, {
   explanation: "The Offer and subscription belong to different organizations.",
 });
 
-console.log("Experience entitlement contract verification passed.");
+const configuredExperience = {
+  id: "org-a:primary:nurture.reference-assessment",
+  organizationId: "org-a",
+  moduleId: "nurture.reference-assessment",
+  moduleVersion: "1.0.0",
+  slot: "primary",
+  status: "published",
+  configurationVersion: "draft-placeholder",
+  configuration: { title: "Organization Momentum Check", completionMessage: "Ready for the next step." },
+};
+const extensionKey = experienceConfigurationExtensionKey(
+  configuredExperience.slot,
+  configuredExperience.moduleId,
+  configuredExperience.moduleVersion,
+);
+const extension = createExperienceConfigurationExtension(configuredExperience);
+const definitionSource = createTrackAExperienceDefinitionSource({
+  getPublishedExtension(organizationId, requestedKey) {
+    assert.equal(organizationId, "org-a");
+    assert.equal(requestedKey, extensionKey);
+    return {
+      organizationId,
+      extensionKey: requestedKey,
+      extension,
+      configurationVersionId: "org-a-configuration-v4",
+      configurationVersion: 4,
+      publishedAt: "2026-09-05T12:02:00.000Z",
+    };
+  },
+});
+const publishedExperience = await definitionSource.loadPublishedExperience({
+  organizationId: "org-a",
+  slot: "primary",
+  moduleId: "nurture.reference-assessment",
+  moduleVersion: "1.0.0",
+});
+assert.equal(publishedExperience?.configurationVersion, "org-a-configuration-v4");
+assert.equal(publishedExperience?.configuration.title, "Organization Momentum Check");
+assert.equal(publishedExperience?.status, "published");
+
+const organizationSource = createTrackAExperienceOrganizationSource(() => "org-public");
+assert.equal(organizationSource.resolveOrganizationId({ accessMode: "trial" }), "org-public");
+assert.equal(
+  organizationSource.resolveOrganizationId({ accessMode: "authenticated", authenticatedOrganizationId: "org-auth" }),
+  "org-auth",
+);
+
+console.log("Experience cross-track contract verification passed.");
