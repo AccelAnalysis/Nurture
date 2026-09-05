@@ -45,7 +45,8 @@ export interface StateDecision {
 }
 
 function nowIso(dependencies: AcquisitionRuntimeDependencies): string {
-  return dependencies.now?.() ?? new Date().toISOString();
+  return dependencies.now?.()
+    ?? new Date().toISOString();
 }
 
 function nextId(dependencies: AcquisitionRuntimeDependencies): string {
@@ -309,7 +310,13 @@ async function transition(
   status: Exclude<AcquisitionJobStatus, "leased">,
   reason: AcquisitionReasonCode,
   detail?: string,
-  options: { dueAt?: string; providerAttemptCount?: number; providerMessageId?: string; providerRequestId?: string } = {},
+  options: {
+    dueAt?: string;
+    providerAttemptCount?: number;
+    providerMessageId?: string;
+    providerRequestId?: string;
+    clearProviderSubmissionMarker?: boolean;
+  } = {},
 ): Promise<AcquisitionJob> {
   const at = nowIso(dependencies);
   const updated = await dependencies.store.transitionLeasedJob({
@@ -358,6 +365,7 @@ async function processLeasedJob(
   } catch (error) {
     return transition(dependencies, job, leaseToken, "failed", "runtime-error", error instanceof Error ? error.message : "Invalid automation definition.");
   }
+  if (!definition.enabled) return transition(dependencies, job, leaseToken, "cancelled", "definition-disabled");
 
   const step = definition.steps.find((candidate) => candidate.stepId === job.stepId);
   if (!step) return transition(dependencies, job, leaseToken, "failed", "definition-version-unavailable", "Pinned automation step is unavailable.");
@@ -391,16 +399,6 @@ async function processLeasedJob(
     }
   }
 
-  const acceptedSince = subtractSeconds(current, definition.frequencyPolicy.windowSeconds);
-  const acceptedCount = await dependencies.store.countProviderAcceptedEffects({
-    organizationId: job.organizationId,
-    subjectId: job.subjectId,
-    dataMode: job.dataMode,
-    purpose: step.action.purpose,
-    since: acceptedSince,
-  });
-  if (acceptedCount >= definition.frequencyPolicy.maxProviderAcceptedEffects) return transition(dependencies, job, leaseToken, "suppressed", "frequency-cap-reached");
-
   const eligibilityInput: AcquisitionEmailEligibilityInput = {
     ...stateReadInput(job),
     effectId: job.effectId,
@@ -428,7 +426,19 @@ async function processLeasedJob(
     leaseToken,
     at: current,
     attemptId: nextId(dependencies),
+    frequencyAdmission: {
+      organizationId: job.organizationId,
+      subjectId: job.subjectId,
+      dataMode: job.dataMode,
+      purpose: step.action.purpose,
+      since: subtractSeconds(current, definition.frequencyPolicy.windowSeconds),
+      maxProviderAcceptedEffects: definition.frequencyPolicy.maxProviderAcceptedEffects,
+    },
   });
+  if (markedJob.status === "suppressed") {
+    await dependencies.store.finalizeEnrollmentIfSettled({ enrollmentId: job.enrollmentId, at: current });
+    return markedJob;
+  }
 
   let submission;
   try {
@@ -449,14 +459,31 @@ async function processLeasedJob(
       providerRequestId: submission.providerRequestId,
     });
   }
-  if (submission.status === "suppressed") return transition(dependencies, markedJob, leaseToken, "suppressed", "communication-suppressed", submission.reason, { providerAttemptCount: markedJob.providerAttemptCount });
-  if (submission.status === "unknown-outcome") return transition(dependencies, markedJob, leaseToken, "unknown-outcome", "provider-unknown-outcome", submission.reason, { providerAttemptCount: markedJob.providerAttemptCount, providerRequestId: submission.providerRequestId });
-  if (submission.status === "permanent-failure") return transition(dependencies, markedJob, leaseToken, "failed", "provider-permanent-failure", submission.reason, { providerAttemptCount: markedJob.providerAttemptCount, providerRequestId: submission.providerRequestId });
+  if (submission.status === "suppressed") {
+    return transition(dependencies, markedJob, leaseToken, "suppressed", "communication-suppressed", submission.reason, {
+      providerAttemptCount: markedJob.providerAttemptCount,
+      clearProviderSubmissionMarker: true,
+    });
+  }
+  if (submission.status === "unknown-outcome") {
+    return transition(dependencies, markedJob, leaseToken, "unknown-outcome", "provider-unknown-outcome", submission.reason, {
+      providerAttemptCount: markedJob.providerAttemptCount,
+      providerRequestId: submission.providerRequestId,
+    });
+  }
+  if (submission.status === "permanent-failure") {
+    return transition(dependencies, markedJob, leaseToken, "failed", "provider-permanent-failure", submission.reason, {
+      providerAttemptCount: markedJob.providerAttemptCount,
+      providerRequestId: submission.providerRequestId,
+      clearProviderSubmissionMarker: true,
+    });
+  }
 
   if (markedJob.providerAttemptCount >= definition.retryPolicy.maxAttempts) {
     return transition(dependencies, markedJob, leaseToken, "failed", "retry-exhausted", submission.reason, {
       providerAttemptCount: markedJob.providerAttemptCount,
       providerRequestId: submission.providerRequestId,
+      clearProviderSubmissionMarker: true,
     });
   }
   const retryDelay = acquisitionRetryDelaySeconds(definition, submission.retryAfterSeconds, markedJob.providerAttemptCount);
@@ -464,6 +491,7 @@ async function processLeasedJob(
     providerAttemptCount: markedJob.providerAttemptCount,
     providerRequestId: submission.providerRequestId,
     dueAt: addSeconds(current, retryDelay),
+    clearProviderSubmissionMarker: true,
   });
 }
 
