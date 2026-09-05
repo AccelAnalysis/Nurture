@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 import { Badge, Card } from "../../components/ui";
 import { Link } from "../../router";
+import { resolvePublicHandoffHref } from "./publicHandoffs";
 import type { MediaAsset, OrganizationConfiguration } from "./types";
 
 function useReducedMotion() {
@@ -149,6 +150,8 @@ export function ConfiguredMarketingHome({
 }) {
   const PublicLink = preview ? PreviewLink : Link;
   const accentStyle = { "--track-a-accent": configuration.brand.accentColor } as CSSProperties;
+  const primaryHref = resolvePublicHandoffHref(configuration.site.primaryCta.href, configuration.organizationId);
+  const secondaryHref = resolvePublicHandoffHref(configuration.site.secondaryCta.href, configuration.organizationId);
   return (
     <div className="track-a-configured-home" style={accentStyle}>
       <section className="hero content-width track-a-configured-hero">
@@ -157,8 +160,8 @@ export function ConfiguredMarketingHome({
           <h1>{configuration.site.headline}</h1>
           <p>{configuration.site.supportingText}</p>
           <div className="hero-actions">
-            <PublicLink className="button track-a-accent-button" href={configuration.site.primaryCta.href}>{configuration.site.primaryCta.label}</PublicLink>
-            <PublicLink className="button button-secondary" href={configuration.site.secondaryCta.href}>{configuration.site.secondaryCta.label}</PublicLink>
+            <PublicLink className="button track-a-accent-button" href={primaryHref}>{configuration.site.primaryCta.label}</PublicLink>
+            <PublicLink className="button button-secondary" href={secondaryHref}>{configuration.site.secondaryCta.label}</PublicLink>
           </div>
         </div>
         <div className="track-a-hero-media"><HeroMedia asset={configuration.site.heroMedia} /></div>
@@ -184,7 +187,7 @@ export function PublicSitePreview({ configuration }: { configuration: Organizati
       <header className="track-a-preview-header">
         <ConfiguredBrand configuration={configuration} link={false} />
         <nav aria-label="Preview navigation">
-          {configuration.site.navigation.slice(0, 4).map((item) => <PreviewLink key={item.id} href={item.href}>{item.label}</PreviewLink>)}
+          {configuration.site.navigation.slice(0, 4).map((item) => <PreviewLink key={item.id} href={resolvePublicHandoffHref(item.href, configuration.organizationId)}>{item.label}</PreviewLink>)}
         </nav>
       </header>
       <ConfiguredMarketingHome configuration={configuration} preview />
