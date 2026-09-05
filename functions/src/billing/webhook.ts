@@ -198,7 +198,6 @@ async function handleInvoiceFailed(event: Stripe.Event, payload: Stripe.Invoice)
   });
 }
 async function handleRefund(event: Stripe.Event, refund: Stripe.Refund) {
-  if (refund.livemode) return permanentBillingEvent("Release 5 payment analytics rejects live-mode refund events.");
   const eventRef = providerEventRef(event.id);
   if (refund.status !== "succeeded") {
     await db.runTransaction(async (transaction) => { if (!(await transaction.get(eventRef)).exists) transaction.create(eventRef, providerRecord(event, "processed", { reason: `refund-${refund.status ?? "unknown"}` })); });
