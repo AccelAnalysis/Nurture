@@ -1,0 +1,130 @@
+rules_version = '2';
+// Skeleton policy: test/review before an explicit rules deployment.
+// Production deployment remains Hosting-only. Admin SDK bypasses these rules;
+// every future callable must independently verify identity, tenant, and permission.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function registered() {
+      return signedIn()
+        && request.auth.token.get('email', null) is string
+        && request.auth.token.get('firebase', {}).get('sign_in_provider', '') != 'anonymous';
+    }
+    function activeUser() {
+      return registered()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active';
+    }
+    function membership(orgId) {
+      return get(/databases/$(database)/documents/organizationMemberships/$(orgId + '_' + request.auth.uid)).data;
+    }
+    function member(orgId) {
+      return activeUser()
+        && exists(/databases/$(database)/documents/organizationMemberships/$(orgId + '_' + request.auth.uid))
+        && membership(orgId).organizationId == orgId
+        && membership(orgId).userId == request.auth.uid
+        && membership(orgId).status == 'active'
+        && membership(orgId).role in ['owner', 'administrator', 'manager', 'member']
+        && get(/databases/$(database)/documents/organizations/$(orgId)).data.status == 'active';
+    }
+    function staff(orgId) {
+      return member(orgId) && request.auth.token.get('email_verified', false) == true
+        && membership(orgId).role in ['owner', 'administrator', 'manager'];
+    }
+    function admin(orgId) {
+      return staff(orgId) && membership(orgId).role in ['owner', 'administrator'];
+    }
+    function preferences(data) {
+      return data is map
+        && data.keys().hasAll(['theme', 'timeZone', 'emailMarketing', 'smsMarketing', 'inAppNotifications'])
+        && data.keys().hasOnly(['theme', 'timeZone', 'emailMarketing', 'smsMarketing', 'inAppNotifications'])
+        && data.theme in ['system', 'light', 'dark']
+        && data.timeZone is string && data.timeZone.size() > 0 && data.timeZone.size() <= 80
+        && data.emailMarketing is bool && data.smsMarketing is bool && data.inAppNotifications is bool;
+    }
+    function validProfile(data, uid) {
+      return data.keys().hasAll(['uid', 'email', 'displayName', 'firstName', 'lastName', 'photoURL', 'phone', 'status', 'createdAt', 'updatedAt', 'onboardingStatus', 'defaultOrganizationId', 'preferences'])
+        && data.keys().hasOnly(['uid', 'email', 'displayName', 'firstName', 'lastName', 'photoURL', 'phone', 'status', 'createdAt', 'updatedAt', 'onboardingStatus', 'defaultOrganizationId', 'preferences', 'referralCode', 'referredBy', 'lastActiveAt'])
+        && data.uid == uid
+        && data.email is string && data.email.size() <= 254
+        && data.displayName is string && data.displayName.size() <= 100
+        && data.firstName is string && data.firstName.size() <= 100
+        && data.lastName is string && data.lastName.size() <= 100
+        && (data.photoURL == null || (data.photoURL is string && data.photoURL.size() <= 1000))
+        && (data.phone == null || (data.phone is string && data.phone.size() <= 30))
+        && data.status in ['active', 'suspended', 'deletionRequested']
+        && data.createdAt is timestamp && data.updatedAt is timestamp
+        && data.onboardingStatus in ['notStarted', 'inProgress', 'complete']
+        && (data.defaultOrganizationId == null || data.defaultOrganizationId is string)
+        && preferences(data.preferences);
+    }
+    match /users/{uid} {
+      allow get: if registered() && request.auth.uid == uid;
+      allow list: if false;
+      allow create: if registered() && request.auth.uid == uid
+        && validProfile(request.resource.data, uid)
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.status == 'active'
+        && request.resource.data.defaultOrganizationId == null
+        && request.resource.data.photoURL == null
+        && !request.resource.data.keys().hasAny(['referralCode', 'referredBy', 'lastActiveAt'])
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+      allow update: if registered() && request.auth.uid == uid
+        && resource.data.status == 'active'
+        && validProfile(request.resource.data, uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'firstName', 'lastName', 'phone', 'preferences', 'onboardingStatus', 'updatedAt'])
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+      match /notifications/{notificationId} {
+        allow read: if activeUser() && request.auth.uid == uid;
+        allow write: if false;
+      }
+      match /subscriptions/{subscriptionId} {
+        allow read: if activeUser() && request.auth.uid == uid;
+        allow write: if false;
+      }
+      match /feedback/{feedbackId} {
+        allow read: if activeUser() && request.auth.uid == uid;
+        allow write: if false;
+      }
+    }
+    match /organizationMemberships/{membershipId} {
+      // Queries MUST constrain userId to the current uid, or organizationId to a permitted tenant.
+      allow read: if activeUser() && (resource.data.userId == request.auth.uid || admin(resource.data.organizationId));
+      allow write: if false;
+    }
+    match /organizations/{orgId} {
+      allow get: if member(orgId);
+      allow list, write: if false;
+      match /contacts/{contactId} { allow read: if staff(orgId); allow write: if false; }
+      match /segments/{segmentId} { allow read: if staff(orgId); allow write: if false; }
+      match /sequences/{sequenceId} { allow read: if staff(orgId); allow write: if false; }
+      match /sequenceEnrollments/{enrollmentId} { allow read: if staff(orgId); allow write: if false; }
+      match /messageTemplates/{templateId} { allow read: if staff(orgId); allow write: if false; }
+      match /surveys/{surveyId} {
+        allow read: if staff(orgId); allow write: if false;
+        match /responses/{responseId} { allow read: if staff(orgId); allow write: if false; }
+      }
+      match /offers/{offerId} { allow read: if staff(orgId); allow write: if false; }
+      match /feedback/{feedbackId} { allow read: if staff(orgId); allow write: if false; }
+      match /analytics/{summaryId} { allow read: if staff(orgId); allow write: if false; }
+      match /invitations/{invitationId} { allow read: if admin(orgId); allow write: if false; }
+      match /referrals/{referralId} { allow read: if admin(orgId); allow write: if false; }
+      match /referralRewards/{rewardId} { allow read: if admin(orgId); allow write: if false; }
+      match /subscriptions/{subscriptionId} { allow read: if admin(orgId); allow write: if false; }
+      match /auditEvents/{eventId} { allow read: if admin(orgId); allow write: if false; }
+    }
+    // Deliberate sanitized projections; never copy a private source document wholesale.
+    match /publicOffers/{offerId} {
+      allow read: if resource.data.status == 'published' && resource.data.visibility == 'public';
+      allow write: if false;
+    }
+    match /publicSurveys/{surveyId} {
+      allow read: if resource.data.status == 'published' && resource.data.visibility == 'public';
+      allow write: if false;
+    }
+    // Includes private invitation tokens, attribution claims, platform billing, and rewards.
+    match /{document=**} { allow read, write: if false; }
+  }
+}

@@ -1,29 +1,44 @@
 {
   "name": "nurture",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "engines": {
     "node": ">=20.19.0"
   },
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
-    "typecheck": "tsc --noEmit",
+    "build": "vite build --mode production",
+    "typecheck": "tsc --noEmit && tsc -p functions/tsconfig.json --noEmit",
     "preview": "vite preview",
-    "firebase:emulate": "npx -y firebase-tools@latest emulators:start --only hosting",
+    "firebase:emulate": "npx -y firebase-tools@latest emulators:start --only auth,firestore,storage,hosting --project nurture-12398",
     "firebase:preview": "npm run build && npx -y firebase-tools@latest hosting:channel:deploy bootstrap --project nurture-12398 --expires 7d",
-    "firebase:deploy": "npm run build && npx -y firebase-tools@latest deploy --only hosting --project nurture-12398"
+    "firebase:deploy": "npm run build && npx -y firebase-tools@latest deploy --only hosting --project nurture-12398",
+    "dev:demo": "vite --mode demo",
+    "build:demo": "vite build --mode demo --outDir dist-demo",
+    "preview:demo": "vite preview --mode demo --outDir dist-demo",
+    "test": "node --experimental-strip-types --test tests/unit/*.test.mjs",
+    "test:browser": "playwright test",
+    "test:rules": "node --test tests/rules/*.test.mjs",
+    "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"functions/**/*.ts\" \"tests/**/*.{ts,mjs}\" \"docs/**/*.md\" *.json *.ts *.md .github/workflows/*.yml",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"functions/**/*.ts\" \"tests/**/*.{ts,mjs}\" \"docs/**/*.md\" *.json *.ts *.md .github/workflows/*.yml",
+    "check": "npm run typecheck && npm test && npm run build",
+    "test:emulators": "npx -y firebase-tools@latest emulators:exec --only firestore,storage --project nurture-12398 \"npm run test:rules\""
   },
   "dependencies": {
     "firebase": "^12.18.0",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "react-router-dom": "7.18.3"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@firebase/rules-unit-testing": "5.0.0",
+    "@playwright/test": "1.63.0",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.1.1",
+    "prettier": "3.9.6",
     "typescript": "^7.0.2",
     "vite": "^8.2.2"
   }
