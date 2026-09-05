@@ -39,8 +39,11 @@ jobs:
       - name: Platform and integration contracts
         run: npm test
 
-      - name: Release 3 integration acceptance
+      - name: Release 3 regression acceptance
         run: npm run test:release3
+
+      - name: Release 4 integration acceptance
+        run: npm run test:release4
 
       - name: Experience contract
         run: npm run test:experience
@@ -76,6 +79,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: release-3-browser-evidence
+          name: release-4-browser-evidence
           path: test-results
           if-no-files-found: ignore
