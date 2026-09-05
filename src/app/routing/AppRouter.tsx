@@ -79,7 +79,7 @@ export function AppRouter() {
   if (first === "offers" && second) return <PublicShell><PublicOfferDetail offerId={second} /></PublicShell>;
   if (first === "experience") {
     return (
-      <ParticipantShell mode="trial">
+      <ParticipantShell mode="public">
         <ExperienceHost slot="primary" accessMode="public" relativePath={route.segments.slice(1).join("/")} />
       </ParticipantShell>
     );
