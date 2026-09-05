@@ -1,4 +1,4 @@
-import type { AnalyticsDataMode } from "../analytics/contracts";
+import type { AnalyticsDataMode } from "../analytics/contracts.js";
 
 export const CUSTOMER_FOUNDATION_SCHEMA_VERSION = 2 as const;
 export const ONBOARDING_FLOW_SCHEMA_VERSION = 2 as const;
