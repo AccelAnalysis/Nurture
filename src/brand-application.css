@@ -1,0 +1,5 @@
+/* Apply the canonical brand font at the inheritance root, including native form controls. */
+html { font-family: var(--n-font); }
+
+/* Header link styling must not override the primary button's contrasting label. */
+.public-header .header-actions > a.button { color: white; }
