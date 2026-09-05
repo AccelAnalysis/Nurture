@@ -74,6 +74,27 @@ function moduleHref(base: string, relativePath: string) {
   return relativePath ? `${base}/${relativePath}` : base;
 }
 
+function safeExperienceReturnPath(returnPath: string, fallback: string) {
+  return returnPath.startsWith("/app/experience") || returnPath.startsWith("/app/secondary")
+    ? returnPath
+    : fallback;
+}
+
+function registrationHref(input: {
+  returnTo: string;
+  accessMode: ExperienceAccessMode;
+  organizationId?: string;
+  moduleId: string;
+}) {
+  const query = new URLSearchParams({
+    returnTo: input.returnTo,
+    entryPoint: input.accessMode === "trial" ? "trial" : "public",
+    source: `experience:${input.moduleId}`,
+  });
+  if (input.organizationId) query.set("organizationId", input.organizationId);
+  return `/register?${query.toString()}`;
+}
+
 export function ExperienceHost({ slot, accessMode, relativePath = "" }: ExperienceHostProps) {
   const registration = getExperienceRegistration(slot);
   const { currentUser } = useAuth();
@@ -175,10 +196,10 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
       return;
     }
     setCustomerResult("loading");
-    // Release 1 follows the completed C/D contract: resolve the stable Nurture
-    // Customer/Profile identity, then validate organization scope separately on
-    // the Experience and entitlement records. Do not synthesize a tenant Customer.
-    runtime.customerSource.resolveCustomer({ identityId: currentUser.uid }).then((result) => {
+    runtime.customerSource.resolveCustomer({
+      identityId: currentUser.uid,
+      organizationId: requestedOrganizationId,
+    }).then((result) => {
       if (!cancelled) setCustomerResult(result);
     }).catch((reason: unknown) => {
       if (!cancelled) setCustomerResult({
@@ -187,7 +208,7 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
       });
     });
     return () => { cancelled = true; };
-  }, [accessMode, currentUser, runtime.customerSource]);
+  }, [accessMode, currentUser, requestedOrganizationId, runtime.customerSource]);
 
   useEffect(() => {
     let cancelled = false;
@@ -309,6 +330,16 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
     customerId,
     snapshot: trustedSnapshot,
   });
+  const authenticatedReturnPath = moduleHref(basePath(slot, "authenticated"), normalizedPath);
+  const beginRegistration = (returnPath = authenticatedReturnPath) => {
+    const safeReturnPath = safeExperienceReturnPath(returnPath, authenticatedReturnPath);
+    navigate(registrationHref({
+      returnTo: safeReturnPath,
+      accessMode,
+      organizationId: effectiveOrganizationId,
+      moduleId: module.manifest.id,
+    }));
+  };
 
   if (!route.access.includes(accessMode)) {
     const needsAuthentication = route.access.includes("authenticated") && accessMode !== "authenticated";
@@ -316,10 +347,7 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
       <EmptyState
         title={needsAuthentication ? "Create an account to continue" : "Experience access is limited"}
         description={needsAuthentication ? "This module destination is available after authentication." : "This destination is not exposed in the current Experience mode."}
-        action={needsAuthentication ? <Button onClick={() => {
-          sessionStorage.setItem("nurture-experience-return-path", moduleHref(basePath(slot, "authenticated"), normalizedPath));
-          navigate("/register");
-        }}>Create account</Button> : undefined}
+        action={needsAuthentication ? <Button onClick={() => beginRegistration()}>Create account</Button> : undefined}
       />
     );
   }
@@ -334,10 +362,7 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
           title={authenticationRequired ? "Create an account to continue" : "This capability is not available"}
           description={decision.explanation}
           action={authenticationRequired
-            ? <Button onClick={() => {
-                sessionStorage.setItem("nurture-experience-return-path", moduleHref(basePath(slot, "authenticated"), normalizedPath));
-                navigate("/register");
-              }}>Create account</Button>
+            ? <Button onClick={() => beginRegistration()}>Create account</Button>
             : <Button onClick={() => {
                 submitHostEvent("experience.premium_feature_requested", { capabilityKey, reason: decision.reason });
                 navigate(`${accessMode === "authenticated" ? "/app/offers" : "/offers"}?capability=${encodeURIComponent(capabilityKey)}`);
@@ -362,12 +387,8 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
     identityId: currentUser?.uid,
     customerId,
     canUse,
-    requestRegistration(returnPath = moduleHref(basePath(slot, "authenticated"), normalizedPath)) {
-      const safeReturnPath = returnPath.startsWith("/app/experience") || returnPath.startsWith("/app/secondary")
-        ? returnPath
-        : moduleHref(basePath(slot, "authenticated"), normalizedPath);
-      sessionStorage.setItem("nurture-experience-return-path", safeReturnPath);
-      navigate("/register");
+    requestRegistration(returnPath = authenticatedReturnPath) {
+      beginRegistration(returnPath);
     },
     requestUpgrade(capabilityKey) {
       submitHostEvent("experience.premium_feature_requested", { capabilityKey });
@@ -420,15 +441,18 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
           })}
         </nav>
       ) : null}
-      <ExperienceModuleBoundary onError={(error) => {
-        submitHostEvent("experience.module_error", { message: error.message.slice(0, 160) });
-        void runtime.recoverableErrorReporter.report({
-          code: "experience.module_render_error",
-          experienceId: experience.id,
-          moduleId: module.manifest.id,
-          safeContext: { message: error.message.slice(0, 160) },
-        });
-      }}>
+      <ExperienceModuleBoundary
+        key={`${experience.id}:${module.manifest.id}:${normalizedPath}`}
+        onError={(error) => {
+          submitHostEvent("experience.module_error", { message: error.message.slice(0, 160) });
+          void runtime.recoverableErrorReporter.report({
+            code: "experience.module_render_error",
+            experienceId: experience.id,
+            moduleId: module.manifest.id,
+            safeContext: { message: error.message.slice(0, 160) },
+          });
+        }}
+      >
         <div className="experience-module-surface">{module.render(context)}</div>
       </ExperienceModuleBoundary>
     </section>
