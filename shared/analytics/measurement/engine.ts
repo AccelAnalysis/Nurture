@@ -1,5 +1,4 @@
-import type { LifecycleEventEnvelope } from "../contracts.js";
-import type { Dimension, EventSelector, MeasurementInput, MetricDefinition, MetricQuery, MetricResult, SubscriptionReadSet } from "./contracts.js";
+import type { Dimension, EventSelector, MeasurementEvent, MeasurementInput, MetricDefinition, MetricQuery, MetricResult, SubscriptionReadSet } from "./contracts.js";
 import { CALCULATION_VERSION, METRICS_BY_ID, REGISTRY_VERSION } from "./registry.js";
 
 const DAY = 86_400_000;
@@ -32,6 +31,7 @@ export function parseMetricQuery(value: unknown): MetricQuery {
     const metric = METRICS_BY_ID.get(metricId)!;
     if (Object.keys(filters).some((key) => !metric.dimensions.includes(key as Dimension))) throw new Error(`A selected filter is unsupported by ${metricId}.`);
   }
+  if ((q.metricIds as string[]).includes("satisfaction.nps") && typeof filters.surveyVersion !== "string") throw new Error("Net Promoter Score requires one explicit surveyVersion filter.");
   if (q.currency !== undefined && (typeof q.currency !== "string" || !/^[A-Z]{3}$/.test(q.currency))) throw new Error("Currency must be a three-letter uppercase code.");
   const observationDays = q.observationDays ?? 7;
   if (typeof observationDays !== "number" || !Number.isInteger(observationDays) || observationDays < 1 || observationDays > 90) throw new Error("Observation window must be 1–90 days.");
@@ -42,18 +42,30 @@ function stable(value: unknown): string {
   if (value && typeof value === "object") return `{${Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${JSON.stringify(k)}:${stable(v)}`).join(",")}}`;
   return JSON.stringify(value) ?? "null";
 }
-function fingerprint(e: LifecycleEventEnvelope) {
-  // Transport receipt/event IDs can differ on replay; semantic content may not.
+function fingerprint(e: MeasurementEvent) {
   const { eventId: _id, receivedAt: _receipt, ...semantic } = e;
   return stable(semantic);
 }
-function dimension(e: LifecycleEventEnvelope, key: Dimension): unknown {
-  return key in e ? e[key as keyof LifecycleEventEnvelope] : e.payload[key];
+const payloadAliases: Partial<Record<Dimension, readonly string[]>> = {
+  acquisitionSource: ["acquisitionSource", "source"],
+  automationVersion: ["automationVersion", "automationVersionId"],
+  surveyId: ["surveyId"],
+  surveyVersion: ["surveyVersion", "versionId"],
+  referralProgramId: ["referralProgramId", "programId"],
+  referralProgramVersion: ["referralProgramVersion", "versionId"],
+};
+function dimension(e: MeasurementEvent, key: Dimension): unknown {
+  const direct = e[key as keyof MeasurementEvent];
+  if (direct !== undefined) return direct;
+  for (const alias of payloadAliases[key] ?? [key]) {
+    if (e.payload[alias] !== undefined) return e.payload[alias];
+  }
+  return undefined;
 }
-function match(e: LifecycleEventEnvelope, selector: EventSelector): boolean {
+function match(e: MeasurementEvent, selector: EventSelector): boolean {
   return e.eventType === selector.eventType && selector.sources.includes(e.source) && Object.entries(selector.where ?? {}).every(([key, value]) => e.payload[key] === value);
 }
-function selected(e: LifecycleEventEnvelope, filters: MetricQuery["filters"]): boolean {
+function selected(e: MeasurementEvent, filters: MetricQuery["filters"]): boolean {
   return Object.entries(filters).every(([key, value]) => String(dimension(e, key as Dimension) ?? "") === value);
 }
 function isUnavailable(result: MetricResult): boolean { return result.status === "unavailable"; }
@@ -67,17 +79,15 @@ function activeSet(set: SubscriptionReadSet | undefined, q: MetricQuery, at: str
   return new Map([...ids].filter(([, s]) => s.status === "active" && (!q.filters.offerId || s.offerId === q.filters.offerId) && (!currency || s.currency.toUpperCase() === q.currency)));
 }
 export function calculateMetrics(q: MetricQuery, input: MeasurementInput): MetricResult[] {
-  // All public callers must use the same strict parser, including rebuilds and tests.
   q = parseMetricQuery(q);
   if (!isUtc(input.calculatedAt)) throw new Error("Invalid calculation time.");
   const now = Date.parse(input.calculatedAt);
-  const from = Date.parse(q.from), to = Date.parse(q.to);
+  const to = Date.parse(q.to);
   const requestedIds = new Set(q.metricIds);
   const wantedTypes = new Set(q.metricIds.flatMap((id) => [...METRICS_BY_ID.get(id)!.selectors.map((s) => s.eventType), ...(METRICS_BY_ID.get(id)!.outcome ? [METRICS_BY_ID.get(id)!.outcome!.eventType] : [])]));
   let duplicates = 0, conflicting = 0, rejected = input.rejected ?? 0;
-  const eventIds = new Map<string, string>(), keys = new Map<string, LifecycleEventEnvelope>(), conflictKeys = new Set<string>();
+  const eventIds = new Map<string, string>(), keys = new Map<string, MeasurementEvent>(), conflictKeys = new Set<string>();
   for (const e of input.events) {
-    // The reader validates the canonical envelope. This is a second tenant/mode/time guard.
     if (e.organizationId !== q.organizationId || e.dataMode !== q.dataMode) continue;
     if (!wantedTypes.has(e.eventType)) continue;
     if (!isUtc(e.occurredAt) || !isUtc(e.receivedAt) || Date.parse(e.receivedAt) > now || Date.parse(e.occurredAt) > now || !e.eventId || !e.idempotencyKey || !e.payload || typeof e.payload !== "object") { rejected++; continue; }
@@ -100,7 +110,7 @@ export function calculateMetrics(q: MetricQuery, input: MeasurementInput): Metri
     if (links.has(key) && links.get(key) !== link.customerId) links.set(key, null);
     else links.set(key, link.customerId);
   }
-  const subjectKey = (e: LifecycleEventEnvelope, metric: MetricDefinition): string | null => {
+  const subjectKey = (e: MeasurementEvent, metric: MetricDefinition): string | null => {
     const field = metric.subject === "transaction" ? "ledgerEntryId" : metric.subject === "invitation" ? "invitationId" : metric.subject === "referral" ? "referralId" : metric.subject === "communication" ? "communicationId" : metric.subject === "run" ? "runId" : metric.subject === "subscription" ? "subscriptionId" : null;
     if (metric.subject === "event") return e.eventId;
     if (field) {
@@ -112,7 +122,7 @@ export function calculateMetrics(q: MetricQuery, input: MeasurementInput): Metri
     if (metric.subject === "visitor") return e.subjectKind === "visitor" && e.subjectId ? `visitor:${e.subjectId}` : e.sessionId ? `session:${e.sessionId}` : null;
     if (e.customerId) return `customer:${e.customerId}`;
     if (e.subjectKind === "customer" && e.subjectId) return `customer:${e.subjectId}`;
-    const linked = links.get(`${e.subjectKind}:${e.subjectId}`);
+    const linked = e.subjectKind && e.subjectId ? links.get(`${e.subjectKind}:${e.subjectId}`) : undefined;
     return linked ? `customer:${linked}` : null;
   };
   return [...requestedIds].map((metricId) => {
@@ -127,7 +137,7 @@ export function calculateMetrics(q: MetricQuery, input: MeasurementInput): Metri
       lineage: { registryVersion: REGISTRY_VERSION, calculationVersion: CALCULATION_VERSION, sources: d.sources, filters: q.filters, sourceRecordCount: 0 },
     };
     const partial = (reason: string) => { if (r.status !== "unavailable") r.status = "partial"; if (!r.reasons.includes(reason)) r.reasons.push(reason); };
-    const unavailable = (reason: string) => { r.status = "unavailable"; r.value = null; r.reasons.push(reason); };
+    const unavailable = (reason: string) => { r.status = "unavailable"; r.value = null; if (!r.reasons.includes(reason)) r.reasons.push(reason); };
     const through: string[] = [];
     for (const source of d.sources) {
       const coverage = input.coverage[source];
@@ -173,23 +183,32 @@ export function calculateMetrics(q: MetricQuery, input: MeasurementInput): Metri
       }
       return r;
     }
+
+    if (d.calculation === "period-rate") {
+      const denominatorRows = events.filter((e) => match(e, d.selectors[0]) && e.occurredAt >= q.from && e.occurredAt < q.to && selected(e, q.filters));
+      const numeratorRows = events.filter((e) => match(e, d.selectors[1]) && e.occurredAt >= q.from && e.occurredAt < q.to && selected(e, q.filters));
+      r.denominator = new Set(denominatorRows.map((e) => e.eventId)).size;
+      r.numerator = new Set(numeratorRows.map((e) => e.eventId)).size;
+      r.lineage.sourceRecordCount = denominatorRows.length + numeratorRows.length;
+      r.value = r.denominator ? r.numerator / r.denominator * 100 : null;
+      if (!r.denominator) r.reasons.push("No eligible denominator records; rate is undefined, not zero.");
+      return r;
+    }
+
     const candidates = events.filter((e) => d.selectors.some((s) => e.eventType === s.eventType) && e.occurredAt >= q.from && e.occurredAt < q.to);
-    // Record missing mappings instead of turning omitted dimensions/keys into plausible zeros.
     for (const e of candidates) {
       if (!d.selectors.some((s) => e.eventType === s.eventType && s.sources.includes(e.source))) { partial("Untrusted source excluded."); continue; }
       if (Object.keys(q.filters).some((key) => dimension(e, key as Dimension) === undefined)) partial("Some entry records lack the selected dimension.");
     }
     const rows = candidates.filter((e) => d.selectors.some((s) => match(e, s)) && selected(e, q.filters));
-    const keyed = new Map<string, LifecycleEventEnvelope>();
+    const keyed = new Map<string, MeasurementEvent>();
     for (const e of rows) {
       const key = subjectKey(e, d);
       if (!key) { partial("Some records lack the required trusted subject/link key."); continue; }
       if (!keyed.has(key)) keyed.set(key, e);
       else if (["sum", "net-collected", "nps"].includes(d.calculation)) {
         const prior = keyed.get(key)!;
-        if (prior.payload[d.valueField!] !== e.payload[d.valueField!] || prior.payload.currency !== e.payload.currency || prior.eventType !== e.eventType) {
-          unavailable("Conflicting values for one ledger entry or survey invitation; reconciliation required.");
-        }
+        if (prior.payload[d.valueField!] !== e.payload[d.valueField!] || prior.payload.currency !== e.payload.currency || prior.eventType !== e.eventType) unavailable("Conflicting values for one ledger entry or survey response; reconciliation required.");
       }
     }
     r.lineage.sourceRecordCount = rows.length;
@@ -197,7 +216,7 @@ export function calculateMetrics(q: MetricQuery, input: MeasurementInput): Metri
     if (d.calculation === "count") { r.value = r.numerator = keyed.size; return r; }
     if (cohort) {
       const outcomes = events.filter((e) => d.outcome && match(e, d.outcome));
-      const outcomeMap = new Map<string, LifecycleEventEnvelope[]>();
+      const outcomeMap = new Map<string, MeasurementEvent[]>();
       for (const e of outcomes) {
         const key = subjectKey(e, d);
         if (key) outcomeMap.set(key, [...(outcomeMap.get(key) ?? []), e]);
@@ -222,11 +241,24 @@ export function calculateMetrics(q: MetricQuery, input: MeasurementInput): Metri
       return r;
     }
     if (d.calculation === "nps") {
+      const privacy = new Set<string>();
+      let minimumAnonymousResponses = 5;
+      let anonymousWindowValid = true;
       let promoters = 0, detractors = 0, valid = 0;
       for (const e of keyed.values()) {
+        if (typeof e.payload.privacy === "string") privacy.add(e.payload.privacy);
+        if (e.payload.privacy === "anonymous") {
+          if (typeof e.payload.minimumAnonymousResponses === "number" && Number.isSafeInteger(e.payload.minimumAnonymousResponses)) minimumAnonymousResponses = Math.max(minimumAnonymousResponses, e.payload.minimumAnonymousResponses);
+          if (e.payload.anonymousWindowValid !== true) anonymousWindowValid = false;
+        }
         const score = e.payload[d.valueField!];
         if (typeof score !== "number" || !Number.isInteger(score) || score < 0 || score > 10) { partial("Invalid NPS answer excluded."); continue; }
         valid++; if (score >= 9) promoters++; else if (score <= 6) detractors++;
+      }
+      if (privacy.size > 1) { unavailable("NPS cannot mix identified and anonymous survey privacy modes."); r.lineage.sourceRecordCount = 0; return r; }
+      if (privacy.has("anonymous") && (!anonymousWindowValid || valid < minimumAnonymousResponses)) {
+        unavailable(!anonymousWindowValid ? "Anonymous NPS uses the Release 4 fixed calendar-month reporting window." : "Anonymous NPS is suppressed by the Release 4 minimum-response privacy threshold.");
+        r.numerator = r.denominator = r.value = null; r.lineage.sourceRecordCount = 0; return r;
       }
       r.numerator = promoters - detractors; r.denominator = valid; r.value = valid ? r.numerator / valid * 100 : null;
       if (!valid) r.reasons.push("No valid NPS responses; score is undefined, not zero.");
