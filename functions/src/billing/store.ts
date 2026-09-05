@@ -24,6 +24,10 @@ const capabilitiesByRole: Record<OrganizationRole, ReadonlySet<OrganizationCapab
   member: new Set(),
 };
 
+function isOrganizationRole(value: unknown): value is OrganizationRole {
+  return value === "owner" || value === "administrator" || value === "manager" || value === "member";
+}
+
 function organizationRef(organizationId: string) {
   return db.collection("organizations").doc(organizationId);
 }
@@ -51,9 +55,9 @@ export async function assertOrganizationCapability(organizationId: string, userI
   const membership = await organizationRef(organizationId).collection("memberships").doc(userId).get();
   if (!membership.exists) throw new HttpsError("permission-denied", "No active organization membership was found.");
   const data = membership.data() ?? {};
-  const role = data.role;
-  const status = data.status;
-  if (status !== "active" || (role !== "owner" && role !== "administrator" && role !== "manager" && role !== "member")) {
+  const role: unknown = data.role;
+  const status: unknown = data.status;
+  if (status !== "active" || !isOrganizationRole(role)) {
     throw new HttpsError("permission-denied", "The organization membership is not active.");
   }
   if (!capabilitiesByRole[role].has(capability)) {
