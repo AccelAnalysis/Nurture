@@ -9,3 +9,15 @@ export {
 export { sendGridEventWebhook } from "./webhook.js";
 export { dispatchEmail, type DispatchEmailCommand, type DispatchEmailPrerequisites } from "./service.js";
 export { getSendGridEmailAdapter, SendGridEmailAdapter } from "./sendgrid-adapter.js";
+export {
+  adaptCurrentConsent,
+  createAcquisitionEmailDispatchAdapter,
+  mapAcquisitionPurpose,
+  parseCommunicationTemplateVersionId,
+  requireApprovedCommunicationTemplateId,
+  type AcquisitionCommunicationInput,
+  type AcquisitionCommunicationSubmitInput,
+  type CurrentCommunicationConsentFact,
+  type CurrentCommunicationContext,
+  type CurrentCommunicationContextPort,
+} from "./acquisition-dispatch.js";
