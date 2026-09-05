@@ -1,7 +1,7 @@
 import { CONFIGURATION_EXTENSION_KEYS } from "../configuration/extensions";
 import type { ConfigurationExtension, ConfigurationJsonObject } from "../configuration/types";
 export const LIFECYCLE_ACQUISITION_SCHEMA_VERSION="1";export const LIFECYCLE_ACQUISITION_CATALOG_VERSION="r2-acquisition-v1";
-export type LifecycleAutomationId="R2-WELCOME"|"R2-LEAD"|"R2-ACTIVATE"|"R2-ONBOARD"|"R2-TRIAL"|"R2-CHECKOUT";export type LifecycleMessagePurpose="service"|"promotional";export type LifecycleScheduleKind="after-trigger"|"before-trial-end";
+export type LifecycleAutomationId="R2-WELCOME"|"R2-LEAD"|"R2-ACTIVATE"|"R2-ONBOARD"|"R2-TRIAL"|"R2-CHECKOUT";export type LifecycleMessagePurpose="transactional"|"marketing";export type LifecycleScheduleKind="after-trigger"|"before-trial-end";
 export interface LifecycleTimingChoice{id:string;label:string;description:string;schedule:{kind:"after-trigger";delaySeconds:number}|{kind:"before-trial-end";offsetSeconds:number};}
 export interface LifecycleConditionChoice{/** Mirrors Track E's AcquisitionPredicateKey vocabulary. */id:string;label:string;description:string;required:boolean;}
 export interface LifecycleStopRuleView{/** Mirrors Track E's AcquisitionStopRule vocabulary. */id:string;label:string;description:string;required:boolean;}
