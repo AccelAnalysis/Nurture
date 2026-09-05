@@ -56,8 +56,6 @@ export interface DispatchEmailResult {
   submitted: boolean;
 }
 
-const MAX_PROVIDER_ATTEMPTS = 3;
-
 function lastAttempt(record: MessageDeliveryRecord) {
   return record.attempts[record.attempts.length - 1];
 }
@@ -65,7 +63,9 @@ function lastAttempt(record: MessageDeliveryRecord) {
 function canAttemptExisting(record: MessageDeliveryRecord) {
   if (record.status === "planned") return true;
   const last = lastAttempt(record);
-  return record.status === "failed" && last?.outcome === "retryable-failure" && record.attempts.length < MAX_PROVIDER_ATTEMPTS;
+  // Track E owns retry count/backoff. D only admits an E-requested repeat when
+  // the prior provider attempt was explicitly classified safe-to-retry.
+  return record.status === "failed" && last?.outcome === "retryable-failure";
 }
 
 function providerVariables(values: CommunicationVariableValues) {
@@ -105,6 +105,7 @@ export async function dispatchEmail(
     }, {
       eventType: "communication.outcome_unknown",
       source: "trusted_server",
+      idempotencySuffix: `attempt-${Math.max(1, record.attempts.length)}-recovery`,
       reason,
     });
     return { record, submitted: false };
@@ -221,6 +222,7 @@ export async function dispatchEmail(
   }, {
     eventType: ambiguous ? "communication.outcome_unknown" : "communication.failed",
     source: "trusted_server",
+    idempotencySuffix: `attempt-${attemptNumber}`,
     reason: statusReason,
   });
   return { record, eligibility, submitted: true };
