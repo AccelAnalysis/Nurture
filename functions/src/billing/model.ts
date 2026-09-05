@@ -39,6 +39,19 @@ export interface ProviderEventRecord {
   reason?: string;
 }
 
+/** Permanent signed-payload/provider mapping failures may be acknowledged. */
+export class PermanentBillingEventError extends Error {
+  override name = "PermanentBillingEventError";
+}
+
+export function permanentBillingEvent(message: string): never {
+  throw new PermanentBillingEventError(message);
+}
+
+export function isPermanentBillingEventError(error: unknown): error is PermanentBillingEventError {
+  return error instanceof PermanentBillingEventError;
+}
+
 type UnknownRecord = Record<string, unknown>;
 
 function record(value: unknown, field: string): UnknownRecord {
@@ -173,28 +186,51 @@ export function stripeStatus(status: string): SubscriptionStatus {
   if (status === "incomplete" || status === "incomplete_expired" || status === "trialing" || status === "active" || status === "past_due" || status === "canceled" || status === "unpaid" || status === "paused") {
     return status;
   }
-  throw new Error(`Unsupported Stripe subscription status: ${status}`);
+  return permanentBillingEvent(`Unsupported Stripe subscription status: ${status}`);
 }
 
 export function stripeInterval(interval: string): BillingInterval {
   if (interval === "month" || interval === "year") return interval;
-  throw new Error(`Release 1 supports monthly or annual subscriptions, not ${interval}.`);
+  return permanentBillingEvent(`Release 1 supports monthly or annual subscriptions, not ${interval}.`);
 }
 
 export function unixSecondsToIso(value: number | null | undefined) {
   return typeof value === "number" ? new Date(value * 1000).toISOString() : undefined;
 }
 
+/** Strictly older provider events can be discarded without a provider refresh. */
 export function isStaleProviderEvent(lastProviderEventCreated: number | undefined, incomingProviderEventCreated: number) {
   return typeof lastProviderEventCreated === "number" && incomingProviderEventCreated < lastProviderEventCreated;
+}
+
+function sameCommercialState(previous: StoredSubscription, next: SubscriptionSnapshot) {
+  return previous.organizationId === next.organizationId
+    && previous.customerId === next.customerId
+    && previous.offerId === next.offerId
+    && previous.offerVersion === next.offerVersion
+    && previous.offerPriceId === next.offerPriceId
+    && previous.providerCustomerId === next.providerCustomerId
+    && previous.providerSubscriptionId === next.providerSubscriptionId
+    && previous.providerPriceId === next.providerPriceId
+    && previous.billingInterval === next.billingInterval
+    && previous.currency === next.currency
+    && previous.unitAmountMinor === next.unitAmountMinor
+    && previous.status === next.status
+    && previous.cancelAtPeriodEnd === next.cancelAtPeriodEnd
+    && previous.currentPeriodStart === next.currentPeriodStart
+    && previous.currentPeriodEnd === next.currentPeriodEnd
+    && previous.trialEnd === next.trialEnd;
 }
 
 export function subscriptionLifecycleEvent(
   previous: StoredSubscription | null,
   next: SubscriptionSnapshot,
   providerEventType: string,
-): Extract<CommercialLifecycleEventType, "subscription.started" | "subscription.updated" | "subscription.cancelled"> {
-  if (!previous) return "subscription.started";
+): Extract<CommercialLifecycleEventType, "subscription.started" | "subscription.updated" | "subscription.cancelled"> | null {
+  if (!previous) return next.status === "canceled" || providerEventType === "customer.subscription.deleted"
+    ? "subscription.cancelled"
+    : "subscription.started";
+  if (sameCommercialState(previous, next)) return null;
   if (providerEventType === "customer.subscription.deleted" || next.status === "canceled") return "subscription.cancelled";
   return "subscription.updated";
 }
