@@ -184,7 +184,7 @@ test('survey preview does not submit; public survey accepts a demo response', as
 });
 test('referral survives guest registration without granting organization membership', async ({ page }) => {
   await page.goto('/r/NURTURE-DEMO');
-  await page.getByRole('link', { name: 'Try an experience' }).click();
+  await page.getByRole('main').getByRole('link', { name: 'Try an experience', exact: true }).click();
   await page.getByRole('button', { name: 'Try a guest session' }).click();
   await expect(page.getByRole('button', { name: 'Guest session active' })).toBeDisabled();
   const guestUid = await page.evaluate(
