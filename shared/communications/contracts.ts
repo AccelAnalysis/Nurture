@@ -181,6 +181,7 @@ export interface MessageDeliveryAttempt {
   completedAt?: string;
   outcome: "accepted" | "retryable-failure" | "terminal-failure" | "unknown";
   providerRequestId?: string;
+  retryAfterMs?: number;
   reason?: string;
 }
 
