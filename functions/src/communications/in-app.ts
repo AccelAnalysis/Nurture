@@ -47,11 +47,11 @@ export async function recordInAppTreatmentInteraction(interaction: InAppTreatmen
   const slot = slotRef(interaction.organizationId, interaction.customerId, intent.placementId);
   return db.runTransaction(async (transaction) => {
     const existing = await transaction.get(reference);
+    const current = await transaction.get(slot);
     if (existing.exists) return { created: false };
     transaction.create(reference, interaction);
-    if (interaction.interaction === "dismissed" || interaction.interaction === "acted") {
-      const current = await transaction.get(slot);
-      if (current.data()?.treatmentId === interaction.treatmentId) transaction.delete(slot);
+    if ((interaction.interaction === "dismissed" || interaction.interaction === "acted") && current.data()?.treatmentId === interaction.treatmentId) {
+      transaction.delete(slot);
     }
     return { created: true };
   });
