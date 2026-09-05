@@ -1,0 +1,48 @@
+name: Release 1 independent live verification
+on:
+  push:
+    branches: [ops/release-1-hosting-verification]
+    paths: [.github/workflows/release-1-live-verification.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify-live:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        site:
+          - { name: firebase, url: 'https://nurture-12398.web.app' }
+          - { name: custom-domain, url: 'https://nurture.accelanalysis.com' }
+    env:
+      EXPECTED_RELEASE_SHA: dcd898a731c0146c54ca557134c2ef333a19cb7c
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dcd898a731c0146c54ca557134c2ef333a19cb7c
+          persist-credentials: false
+      - name: Verify exact deployed release
+        env:
+          SITE_URL: ${{ matrix.site.url }}
+        run: |
+          curl --fail --silent --show-error "$SITE_URL/release.json" -o /tmp/release.json
+          node -e "const r=require('/tmp/release.json');if(r.commit!==process.env.EXPECTED_RELEASE_SHA||r.backendActivated!==false)throw Error('Unexpected deployed release');console.log(r)"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm install --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+      - name: Verify live browser journey
+        env:
+          R1_SMOKE_BASE_URL: ${{ matrix.site.url }}
+        run: npm run test:browser
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verified-live-${{ matrix.site.name }}
+          path: |
+            /tmp/release.json
+            test-results/release-1
+          if-no-files-found: ignore
+          retention-days: 7
