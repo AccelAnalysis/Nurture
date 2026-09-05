@@ -59,7 +59,8 @@ class Definitions implements AcquisitionDefinitionPort {
     organizationId: string;
     eventType: AnalyticsEventType;
   }): Promise<readonly AcquisitionAutomationDefinition[]> {
-    return input.organizationId === this.definition.organizationId && input.eventType === this.definition.triggerEventType
+    return input.organizationId === this.definition.organizationId
+      && input.eventType === this.definition.triggerEventType
       ? [this.definition]
       : [];
   }
@@ -112,12 +113,11 @@ class Email implements AcquisitionEmailDispatchPort {
     this.submissions.push(structuredClone(input));
     const outcome = this.outcomes.shift();
     if (outcome) return structuredClone(outcome);
-    const accepted: AcquisitionEmailSubmitResult = {
+    return {
       status: "provider-accepted",
       acceptedAt: "2026-09-05T13:01:00.000Z",
       messageId: `message-${this.submissions.length}`,
     };
-    return accepted;
   }
 }
 
@@ -251,7 +251,11 @@ class Store implements AcquisitionRuntimeStore {
     let count = 0;
     for (const job of this.jobs.values()) {
       if (TERMINAL.has(job.status)) continue;
-      if (job.organizationId !== input.organizationId || job.subjectId !== input.subjectId || job.dataMode !== input.dataMode) continue;
+      if (
+        job.organizationId !== input.organizationId
+        || job.subjectId !== input.subjectId
+        || job.dataMode !== input.dataMode
+      ) continue;
       if (input.automationId && job.automationId !== input.automationId) continue;
       job.status = "cancelled";
       job.lease = undefined;
@@ -319,8 +323,8 @@ function definition(overrides: Partial<AcquisitionAutomationDefinition> = {}): A
       action: {
         kind: "email",
         templateId: "checkout-recovery",
-        templateVersionId: "checkout-recovery@1",
-        purpose: "promotional",
+        templateVersion: 1,
+        purpose: "marketing",
       },
     }],
     expirationSeconds: 86_400,
@@ -361,8 +365,8 @@ function zeroDelayDefinition() {
       action: {
         kind: "email",
         templateId: "checkout-recovery",
-        templateVersionId: "checkout-recovery@1",
-        purpose: "promotional",
+        templateVersion: 1,
+        purpose: "marketing",
       },
     }],
   });
@@ -395,13 +399,41 @@ function fixture(automation = definition()) {
 }
 
 describe("bounded acquisition catalog", () => {
-  it("rejects browser checkout recovery and arbitrary predicate expansion", () => {
+  it("rejects unapproved trigger sources, arbitrary predicates, and purpose relabeling", () => {
     expect(() => validateAcquisitionDefinition(definition({
       allowedTriggerSources: ["browser" as LifecycleEventSource],
     }))).toThrow(/unsupported values/i);
     expect(() => validateAcquisitionDefinition(definition({
       predicates: ["subject.active", "purchase.absent", "commercial.eligible", "onboarding.incomplete"],
     }))).toThrow(/unsupported values/i);
+    expect(() => validateAcquisitionDefinition(definition({
+      steps: [{
+        stepId: "recovery-1",
+        schedule: { kind: "after-trigger", delaySeconds: 60 },
+        action: {
+          kind: "email",
+          templateId: "checkout-recovery",
+          templateVersion: 1,
+          purpose: "transactional",
+        },
+      }],
+    }))).toThrow(/must use marketing communication purpose/i);
+  });
+
+  it("rejects an after-trigger step that can only become due at or after expiration", () => {
+    expect(() => validateAcquisitionDefinition(definition({
+      expirationSeconds: 60,
+      steps: [{
+        stepId: "recovery-1",
+        schedule: { kind: "after-trigger", delaySeconds: 60 },
+        action: {
+          kind: "email",
+          templateId: "checkout-recovery",
+          templateVersion: 1,
+          purpose: "marketing",
+        },
+      }],
+    }))).toThrow(/before the automation expiration/i);
   });
 });
 
@@ -430,6 +462,28 @@ describe("acquisition enrollment", () => {
       .toMatchObject({ status: "skipped", reason: "trigger-source-not-approved" });
     expect(fx.store.jobs.size).toBe(0);
   });
+
+  it("does not move a future configured send earlier when current state is unknown", async () => {
+    const fx = fixture(definition({
+      steps: [{
+        stepId: "recovery-1",
+        schedule: { kind: "after-trigger", delaySeconds: 3_600 },
+        action: {
+          kind: "email",
+          templateId: "checkout-recovery",
+          templateVersion: 1,
+          purpose: "marketing",
+        },
+      }],
+    }));
+    fx.state.value.purchase = "unknown";
+    expect((await fx.runtime.enroll({ event: event() }))[0]?.status).toBe("held");
+    const job = [...fx.store.jobs.values()][0]!;
+    expect(job.dueAt).toBe("2026-09-05T14:00:00.000Z");
+    fx.clock.advance(300);
+    expect((await fx.runtime.drain({ workerId: "not-before" })).scanned).toBe(0);
+    expect(fx.email.submissions).toHaveLength(0);
+  });
 });
 
 describe("durable dispatch admission", () => {
@@ -440,6 +494,11 @@ describe("durable dispatch admission", () => {
     const restarted = createAcquisitionRuntime(fx.dependencies);
     expect((await restarted.drain({ workerId: "worker-restarted" })).providerAccepted).toBe(1);
     expect(fx.email.submissions).toHaveLength(1);
+    expect(fx.email.submissions[0]).toMatchObject({
+      templateId: "checkout-recovery",
+      templateVersion: 1,
+      purpose: "marketing",
+    });
   });
 
   it("stops purchase, pause, opt-out, and unknown-state cases before provider submission", async () => {
