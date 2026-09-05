@@ -10,8 +10,8 @@ import type {
   SegmentFact,
   SegmentFactValue,
   TreatmentAdmissionDecision,
-} from "./contracts";
-import { buildLogicalEffectId, modeMayCreateExternalEffect } from "./contracts";
+} from "./contracts.js";
+import { buildLogicalEffectId, modeMayCreateExternalEffect } from "./contracts.js";
 
 export interface TreatmentExecutionHistory {
   runId: string;
