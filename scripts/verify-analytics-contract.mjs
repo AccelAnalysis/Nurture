@@ -103,7 +103,7 @@ assert.throws(
   AnalyticsContractError,
 );
 assert.throws(
-  () => createLifecycleEventSubmission("experience.started.unregistered.extra", {}, {}, { id, now }),
+  () => createLifecycleEventSubmission("experience.bad", {}, {}, { id, now }),
   AnalyticsContractError,
 );
 
