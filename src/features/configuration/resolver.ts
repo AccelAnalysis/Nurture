@@ -46,6 +46,7 @@ export function resolveOrganizationConfiguration(
       ...defaults.metadata,
       ...overrides.metadata,
     },
+    extensions: overrides.extensions ?? defaults.extensions,
   };
 }
 
@@ -57,11 +58,13 @@ export function deriveOrganizationOverrides(
   const brand = diffRecord(defaults.brand, effective.brand);
   const site = diffRecord(defaults.site, effective.site);
   const metadata = diffRecord(defaults.metadata, effective.metadata);
+  const extensions = effective.extensions ?? {};
 
   return {
     ...(hasValues(brand) ? { brand } : {}),
     ...(hasValues(site) ? { site } : {}),
     ...(hasValues(metadata) ? { metadata } : {}),
+    ...(hasValues(extensions) ? { extensions } : {}),
   };
 }
 
@@ -86,6 +89,7 @@ export function resetConfigurationField(
     brand: overrides.brand ? { ...overrides.brand } : undefined,
     site: overrides.site ? { ...overrides.site } : undefined,
     metadata: overrides.metadata ? { ...overrides.metadata } : undefined,
+    extensions: overrides.extensions ? { ...overrides.extensions } : undefined,
   };
   const sectionValue = next[section] as Record<string, unknown> | undefined;
   if (!sectionValue) return overrides;
