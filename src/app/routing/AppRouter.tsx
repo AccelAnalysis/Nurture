@@ -4,6 +4,7 @@ import { EmptyState, LoadingState } from "../../components/ui";
 import { useOrganization } from "../../context/OrganizationContext";
 import { usePlatform } from "../../context/PlatformContext";
 import { BrandSiteAdminPage } from "../../features/configuration/BrandSiteAdminPage";
+import { ConfiguredPublicHome } from "../../features/configuration/ConfiguredPublicHome";
 import { AuthenticatedRoute, IdentityRouteBoundary, isIdentityRoute } from "../../features/identity/IdentityBoundary";
 import { useAuth } from "../../features/identity/auth";
 import { OnboardingRouteBoundary } from "../../features/onboarding/OnboardingBoundary";
@@ -13,7 +14,7 @@ import { PlatformAdminRoute } from "../../features/platform/PlatformAdminRoute";
 import { CustomerPage } from "../../pages/AppPages";
 import { AddContact, ContactDetail, OrganizationPage } from "../../pages/OrgPages";
 import { PlatformPage } from "../../pages/PlatformPages";
-import { MarketingHome, PublicExperience, PublicInfoPage, PublicOfferDetail, PublicOffersPage, PublicSurvey, ReferralLanding } from "../../pages/PublicPages";
+import { PublicExperience, PublicInfoPage, PublicOfferDetail, PublicOffersPage, PublicSurvey, ReferralLanding } from "../../pages/PublicPages";
 import { navigate, useRoute } from "../../router";
 import { organizationSectionCapability, platformSectionCapability } from "../../security/authorization";
 
@@ -75,7 +76,7 @@ export function AppRouter() {
   const route = useRoute();
   const [first, second, third, fourth, fifth] = route.segments;
 
-  if (route.path === "/") return <PublicShell><MarketingHome /></PublicShell>;
+  if (route.path === "/") return <PublicShell><ConfiguredPublicHome /></PublicShell>;
   if (publicInfoRoutes.includes(route.path)) return <PublicShell><PublicInfoPage path={route.path} /></PublicShell>;
   if (route.path === "/offers") return <PublicShell><PublicOffersPage /></PublicShell>;
   if (first === "offers" && second) return <PublicShell><PublicOfferDetail offerId={second} /></PublicShell>;
