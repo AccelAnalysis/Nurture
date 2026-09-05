@@ -1,0 +1,373 @@
+import type { AnalyticsDataMode } from "../analytics/contracts";
+
+export const CUSTOMER_FOUNDATION_SCHEMA_VERSION = 2 as const;
+export const ONBOARDING_FLOW_SCHEMA_VERSION = 2 as const;
+export const CONSENT_SCHEMA_VERSION = 1 as const;
+
+export type AuthoritativeCustomerDataMode = Exclude<AnalyticsDataMode, "preview" | "demo">;
+export type CustomerRelationshipStatus = "active" | "suspended" | "archived";
+
+/** The stable R1 customerId is global to the verified identity; this relationship is tenant-scoped. */
+export interface OrganizationCustomerRelationship {
+  schemaVersion: typeof CUSTOMER_FOUNDATION_SCHEMA_VERSION;
+  organizationId: string;
+  customerId: string;
+  identityId: string;
+  status: CustomerRelationshipStatus;
+  dataMode: AuthoritativeCustomerDataMode;
+  profile: OrganizationCustomerProfile;
+  linkedLeadId?: string;
+  createdAt: string;
+  updatedAt: string;
+  verifiedAt: string;
+}
+
+export interface OrganizationCustomerProfile {
+  email: string | null;
+  emailVerified: boolean;
+  displayName: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  phone: string | null;
+  company: string | null;
+  customFields: Record<string, string>;
+}
+
+export type OrganizationCustomerProfileChanges = Partial<
+  Pick<OrganizationCustomerProfile, "displayName" | "firstName" | "lastName" | "phone" | "company">
+> & { customFields?: Record<string, string> };
+
+export type LeadStatus = "captured" | "linked" | "withdrawn";
+
+export interface LeadContact {
+  name: string;
+  email: string;
+  phone?: string;
+  company?: string;
+  customFields: Record<string, string>;
+}
+
+export interface LeadAttributionCandidates {
+  source?: string;
+  landingPath?: string;
+  referralCode?: string;
+  offerId?: string;
+  campaign?: string;
+  medium?: string;
+  content?: string;
+}
+
+export type CommunicationChannel = "email" | "sms";
+export type CommunicationPurpose = "marketing" | "service";
+export type ConsentDecision = "granted" | "denied" | "withdrawn";
+export type ConsentState = ConsentDecision | "unknown";
+
+export interface ConsentCaptureInput {
+  channel: CommunicationChannel;
+  purpose: CommunicationPurpose;
+  decision: Exclude<ConsentDecision, "withdrawn">;
+  policyVersion: string;
+}
+
+export interface CommunicationConsentFact {
+  schemaVersion: typeof CONSENT_SCHEMA_VERSION;
+  organizationId: string;
+  subjectKind: "lead" | "customer";
+  subjectId: string;
+  channel: CommunicationChannel;
+  purpose: CommunicationPurpose;
+  decision: ConsentDecision;
+  source: string;
+  policyVersion: string;
+  recordedAt: string;
+  withdrawnAt?: string;
+  derivedFromLeadId?: string;
+}
+
+/** Stored server record. `linkProofDigest` is never part of a public lead query. */
+export interface OrganizationLeadRecord {
+  schemaVersion: typeof CUSTOMER_FOUNDATION_SCHEMA_VERSION;
+  organizationId: string;
+  leadId: string;
+  status: LeadStatus;
+  dataMode: AuthoritativeCustomerDataMode;
+  contact: LeadContact;
+  attribution: LeadAttributionCandidates;
+  captureSource: string;
+  policyVersion: string;
+  linkProofDigest: string;
+  linkedCustomerId?: string;
+  linkedIdentityId?: string;
+  createdAt: string;
+  updatedAt: string;
+  linkedAt?: string;
+}
+
+export interface LeadSummary extends Omit<OrganizationLeadRecord, "linkProofDigest"> {}
+
+export interface CustomerCustomFieldDefinition {
+  id: string;
+  label: string;
+  type: "text" | "select";
+  required: boolean;
+  maxLength?: number;
+  options?: Array<{ value: string; label: string }>;
+}
+
+export interface LeadCaptureConfiguration {
+  collectPhone: "hidden" | "optional" | "required";
+  collectCompany: "hidden" | "optional" | "required";
+  customFields: CustomerCustomFieldDefinition[];
+  emailMarketingConsent: "hidden" | "optional" | "required";
+  smsMarketingConsent: "hidden" | "optional" | "required";
+  consentPolicyVersion: string;
+}
+
+export interface CaptureLeadCommand {
+  organizationId: string;
+  dataMode: AuthoritativeCustomerDataMode;
+  idempotencyKey: string;
+  linkProof: string;
+  contact: LeadContact;
+  attribution?: LeadAttributionCandidates;
+  captureSource: string;
+  policyVersion: string;
+  consents: ConsentCaptureInput[];
+  /** Public anti-bot trap. A non-empty value is rejected without disclosing why. */
+  website?: string;
+}
+
+export interface CaptureLeadResult {
+  leadId: string;
+  organizationId: string;
+  created: boolean;
+  linkProof: string;
+  capturedAt: string;
+}
+
+export interface LeadLinkProof {
+  organizationId: string;
+  leadId: string;
+  linkProof: string;
+}
+
+export interface EnsureOrganizationCustomerCommand {
+  organizationId: string;
+  dataMode: AuthoritativeCustomerDataMode;
+  idempotencyKey: string;
+  lead?: LeadLinkProof;
+}
+
+export interface EnsureOrganizationCustomerResult {
+  customer: OrganizationCustomerRelationship;
+  leadLinked: boolean;
+  created: boolean;
+}
+
+export interface UpdateOrganizationCustomerProfileCommand {
+  organizationId: string;
+  customerId: string;
+  dataMode: AuthoritativeCustomerDataMode;
+  idempotencyKey: string;
+  changes: OrganizationCustomerProfileChanges;
+}
+
+export interface SetConsentCommand {
+  organizationId: string;
+  customerId: string;
+  dataMode: AuthoritativeCustomerDataMode;
+  idempotencyKey: string;
+  channel: CommunicationChannel;
+  purpose: CommunicationPurpose;
+  decision: ConsentDecision;
+  source: string;
+  policyVersion: string;
+}
+
+export type OnboardingQuestionType = "text" | "email" | "tel" | "textarea" | "checkbox" | "select";
+export type OnboardingAnswer = string | boolean | string[];
+
+export interface OnboardingQuestionDefinition {
+  id: string;
+  label: string;
+  type: OnboardingQuestionType;
+  required: boolean;
+  purpose: string;
+  placeholder?: string;
+  options?: Array<{ value: string; label: string }>;
+  profileField?: "displayName" | "firstName" | "lastName" | "phone" | "company";
+  customProfileField?: string;
+}
+
+export interface OnboardingAgreementDefinition {
+  id: string;
+  version: string;
+  label: string;
+  required: boolean;
+  href?: string;
+}
+
+export interface OnboardingExperienceRequirementDefinition {
+  requirementId: string;
+  label: string;
+  description: string;
+  required: boolean;
+  evidenceType: "host-validated-step";
+}
+
+export interface OnboardingStepDefinitionV2 {
+  id: string;
+  route: string;
+  label: string;
+  description: string;
+  required: boolean;
+  questions: OnboardingQuestionDefinition[];
+  agreement?: OnboardingAgreementDefinition;
+  experienceRequirement?: OnboardingExperienceRequirementDefinition;
+}
+
+export interface OnboardingFlowDefinitionV2 {
+  schemaVersion: typeof ONBOARDING_FLOW_SCHEMA_VERSION;
+  id: string;
+  version: string;
+  welcomeTitle: string;
+  welcomeBody: string;
+  requiresVerifiedEmail: boolean;
+  completionPolicy: "all-required-steps";
+  steps: OnboardingStepDefinitionV2[];
+}
+
+export interface OnboardingProgressScope {
+  organizationId: string;
+  customerId: string;
+  dataMode: AuthoritativeCustomerDataMode;
+  flowId: string;
+  experienceId?: string;
+}
+
+export type OnboardingProgressStatus = "in-progress" | "complete" | "abandoned";
+export type OnboardingStepProgressStatus = "not-started" | "current" | "complete" | "skipped" | "blocked";
+
+export interface AgreementAcceptanceEvidence {
+  evidenceId: string;
+  organizationId: string;
+  customerId: string;
+  flowId: string;
+  flowVersion: string;
+  agreementId: string;
+  agreementVersion: string;
+  acceptedAt: string;
+  source: "onboarding";
+  dataMode: AuthoritativeCustomerDataMode;
+}
+
+export interface OnboardingMigrationProvenance {
+  source: "identityOnboarding";
+  sourceIdentityId: string;
+  sourceDefinitionId: string;
+  sourceDefinitionVersion: string;
+  migratedAt: string;
+}
+
+export interface OnboardingProgressV2 {
+  schemaVersion: typeof ONBOARDING_FLOW_SCHEMA_VERSION;
+  progressId: string;
+  scope: OnboardingProgressScope;
+  /** Pinned when the progress record is created. Publishing a newer flow does not mutate this value. */
+  flowVersion: string;
+  status: OnboardingProgressStatus;
+  currentStepId?: string;
+  steps: Record<string, OnboardingStepProgressStatus>;
+  answers: Record<string, OnboardingAnswer>;
+  acceptedAgreementVersions: Record<string, string>;
+  experienceEvidence: Record<string, string>;
+  startedAt: string;
+  lastActivityAt: string;
+  completedAt?: string;
+  abandonedAt?: string;
+  migration?: OnboardingMigrationProvenance;
+}
+
+export interface StartOnboardingCommand {
+  organizationId: string;
+  customerId: string;
+  dataMode: AuthoritativeCustomerDataMode;
+  flowId: string;
+  experienceId?: string;
+  idempotencyKey: string;
+}
+
+export interface CompleteOnboardingStepCommand {
+  organizationId: string;
+  customerId: string;
+  dataMode: AuthoritativeCustomerDataMode;
+  progressId: string;
+  stepId: string;
+  answers: Record<string, OnboardingAnswer>;
+  agreementAccepted?: boolean;
+  experienceEvidenceId?: string;
+  idempotencyKey: string;
+}
+
+export interface OnboardingStepMutationResult {
+  progress: OnboardingProgressV2;
+  stepCompletedNow: boolean;
+  onboardingCompletedNow: boolean;
+}
+
+export interface LegacyIdentityOnboardingState {
+  identityId: string;
+  customerId: string;
+  definitionId: string;
+  definitionVersion: string;
+  status: string;
+  currentStepId?: string;
+  steps: Record<string, string>;
+  answers: Record<string, OnboardingAnswer>;
+  acceptedAgreements: Record<string, { agreementId: string; version: string; acceptedAt: string }>;
+  startedAt?: string;
+  lastActivityAt: string;
+  completedAt?: string;
+}
+
+export interface IdentityAccountSetupSnapshot {
+  schemaVersion: 1;
+  identityId: string;
+  source: "identityOnboarding";
+  sourceDefinitionId: string;
+  sourceDefinitionVersion: string;
+  profileAnswers: Record<string, OnboardingAnswer>;
+  preservedAt: string;
+}
+
+export type CustomerFoundationErrorCode =
+  | "invalid-request"
+  | "unauthenticated"
+  | "email-unverified"
+  | "organization-unavailable"
+  | "customer-unavailable"
+  | "lead-unavailable"
+  | "lead-proof-invalid"
+  | "lead-email-mismatch"
+  | "cross-tenant-scope"
+  | "mode-mismatch"
+  | "conflict"
+  | "rate-limited"
+  | "flow-unavailable"
+  | "flow-version-unavailable"
+  | "step-invalid"
+  | "permission-denied"
+  | "backend-unavailable";
+
+export interface CustomerFoundationFailure {
+  ok: false;
+  code: CustomerFoundationErrorCode;
+  message: string;
+}
+
+export interface CustomerFoundationSuccess<T> {
+  ok: true;
+  value: T;
+}
+
+export type CustomerFoundationResult<T> = CustomerFoundationSuccess<T> | CustomerFoundationFailure;
