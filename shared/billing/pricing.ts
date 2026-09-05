@@ -36,7 +36,7 @@ export function currencyMinorUnitExponent(currency: string, locale?: string) {
   });
   // ECMA-402's currency formatter uses the ISO 4217 minor-unit digits as the
   // default fraction digits (for example JPY=0, USD=2, KWD=3).
-  return formatter.resolvedOptions().minimumFractionDigits;
+  return formatter.resolvedOptions().minimumFractionDigits ?? 2;
 }
 
 export function formatMinorAmount(unitAmountMinor: number, currency: string, locale?: string) {
@@ -45,7 +45,7 @@ export function formatMinorAmount(unitAmountMinor: number, currency: string, loc
     style: "currency",
     currency: currency.toUpperCase(),
   });
-  const exponent = formatter.resolvedOptions().minimumFractionDigits;
+  const exponent = formatter.resolvedOptions().minimumFractionDigits ?? 2;
   return formatter.format(unitAmountMinor / (10 ** exponent));
 }
 
