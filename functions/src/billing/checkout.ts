@@ -71,7 +71,9 @@ export const createBillingCheckoutSession = onCall({ secrets: [stripeSecretKey] 
       organizationId,
       customerId,
       offerId,
+      offerVersion: offer.version,
       priceId,
+      providerPriceId: price.providerPriceId,
       attemptId,
       providerSessionId: result.checkoutSessionId,
     });
@@ -87,6 +89,8 @@ export const createBillingCheckoutSession = onCall({ secrets: [stripeSecretKey] 
       idempotencyKey: `checkout.started:${attemptId}`,
       payload: {
         provider: "stripe",
+        offerVersion: offer.version,
+        offerPriceId: price.id,
         billingInterval: price.interval,
         currency: price.currency,
         unitAmountMinor: price.unitAmountMinor,
