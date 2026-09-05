@@ -80,7 +80,7 @@ const appNav = [
 ] as const;
 const accountNav = [["Account", "/app/account"], ["Profile", "/app/profile"], ["Settings", "/app/settings"], ["Billing", "/app/billing"], ["Help", "/app/help"]] as const;
 const mobileAppNav = [["Home", "/app"], ["Experience", "/app/experience"], ["Secondary", "/app/secondary"], ["Notifications", "/app/notifications"], ["Account", "/app/account"]] as const;
-const trialNav = [["Experience", "/experience"], ["Offers", "/offers"], ["Create Account", "/register"]] as const;
+const guestAppNav = [["Experience", "/experience"], ["Offers", "/offers"], ["Create Account", "/register"]] as const;
 
 export function ParticipantShell({
   children,
@@ -92,7 +92,7 @@ export function ParticipantShell({
   onSignOut,
 }: {
   children: ReactNode;
-  mode: "trial" | "authenticated";
+  mode: "public" | "trial" | "authenticated";
   displayName?: string | null;
   organizationAdminHref?: string;
   platformAdminHref?: string;
@@ -104,9 +104,14 @@ export function ParticipantShell({
   return (
     <div className={`app-layout participant-layout participant-${mode}`}>
       <aside className="sidebar">
-        <div><Brand />{demo ? <Badge tone="accent">Demo data</Badge> : null}{mode === "trial" ? <Badge tone="accent">Public trial</Badge> : null}</div>
+        <div>
+          <Brand />
+          {demo ? <Badge tone="accent">Demo data</Badge> : null}
+          {mode === "public" ? <Badge tone="accent">Public access</Badge> : null}
+          {mode === "trial" ? <Badge tone="accent">Trial access</Badge> : null}
+        </div>
         <nav aria-label="Participant application">
-          {(authenticated ? appNav : trialNav).map(([label, href]) => <Link key={href} href={href} className={route.path === href ? "active" : ""}>{label}</Link>)}
+          {(authenticated ? appNav : guestAppNav).map(([label, href]) => <Link key={href} href={href} className={route.path === href ? "active" : ""}>{label}</Link>)}
         </nav>
         {authenticated ? (
           <nav aria-label="Account">
@@ -119,12 +124,14 @@ export function ParticipantShell({
       </aside>
       <div className="app-main">
         <header className="app-topbar">
-          <span className="muted">{authenticated ? "Nurture app" : "Nurture trial experience"}</span>
+          <span className="muted">
+            {authenticated ? "Nurture app" : mode === "trial" ? "Nurture trial experience" : "Nurture public experience"}
+          </span>
           {authenticated ? <Link className="user-chip" href="/app/account"><Avatar name={displayName ?? "User"} /><span>{displayName ?? "Account"}</span></Link> : <Link href="/register">Create account</Link>}
         </header>
         <main className="app-content">{children}</main>
         <nav className={`mobile-nav ${authenticated ? "" : "trial-mobile-nav"}`} aria-label="Mobile participant application">
-          {(authenticated ? mobileAppNav : trialNav).map(([label, href]) => <Link key={href} href={href} className={route.path === href ? "active" : ""}>{label}</Link>)}
+          {(authenticated ? mobileAppNav : guestAppNav).map(([label, href]) => <Link key={href} href={href} className={route.path === href ? "active" : ""}>{label}</Link>)}
         </nav>
       </div>
     </div>
