@@ -1,5 +1,6 @@
 import type { User } from "firebase/auth";
 import type { UserPreferences } from "../../../types/models";
+import { stableCustomerIdForIdentity } from "../../../../shared/customer/identity.js";
 import type { CustomerProfile, CustomerProfileChanges } from "../model/contracts";
 import { identityCollections, identityDocumentStore } from "./identityDocumentStore";
 
@@ -11,7 +12,7 @@ export const defaultCustomerPreferences: UserPreferences = {
 };
 
 export function customerIdForIdentity(identityId: string) {
-  return `customer_${identityId}`;
+  return stableCustomerIdForIdentity(identityId);
 }
 
 function buildProfile(user: User): CustomerProfile {
