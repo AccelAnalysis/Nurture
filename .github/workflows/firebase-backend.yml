@@ -31,7 +31,7 @@ jobs:
         with:
           node-version: 24
       - run: npm install --no-audit --no-fund
-      - run: npm run typecheck && npm test && npm run test:release3 && npm run test:experience
+      - run: npm run typecheck && npm test && npm run test:release3 && npm run test:release4 && npm run test:experience
       - run: npx tsc -p tsconfig.analytics.json && node scripts/verify-analytics-contract.mjs
       - run: npm install --prefix functions --no-audit --no-fund
       - run: npm --prefix functions run typecheck && npm --prefix functions test
@@ -112,7 +112,7 @@ jobs:
           test "${ACTIVE_EMAIL}" = "${EXPECTED_EMAIL}"
           test "${ACTIVE_PROJECT}" = "nurture-12398"
           ACCESS_TOKEN="$(gcloud auth print-access-token)"
-          for api in cloudfunctions.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com run.googleapis.com eventarc.googleapis.com pubsub.googleapis.com cloudscheduler.googleapis.com; do
+          for api in cloudfunctions.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com run.googleapis.com eventarc.googleapis.com pubsub.googleapis.com cloudscheduler.googleapis.com secretmanager.googleapis.com; do
             curl -fsS \
               -H "Authorization: Bearer ${ACCESS_TOKEN}" \
               "https://serviceusage.googleapis.com/v1/projects/nurture-12398/services/${api}" \
@@ -123,7 +123,15 @@ jobs:
           done
         env:
           SA_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_NURTURE_12398 }}
-      - name: Deploy integrated Release 3 Functions
+      - name: Verify Release 4 feedback token secret readiness
+        run: |
+          set -euo pipefail
+          gcloud secrets describe R4_FEEDBACK_TOKEN_KEY_V1 --project nurture-12398 --format='value(name)' > /tmp/r4-secret-name
+          test -s /tmp/r4-secret-name
+          ENABLED_VERSION="$(gcloud secrets versions list R4_FEEDBACK_TOKEN_KEY_V1 --project nurture-12398 --filter='state=ENABLED' --format='value(name)' --limit=1)"
+          test -n "${ENABLED_VERSION}"
+          echo "Release 4 feedback token secret has an enabled version."
+      - name: Deploy integrated Release 4 Functions
         run: npx -y firebase-tools@latest deploy --only functions --project nurture-12398 --non-interactive
       - name: Verify deployed Functions inventory
         run: |
@@ -135,11 +143,12 @@ jobs:
             'appendLifecycleEvent','recordExperienceMilestone','projectLifecycleEvent','enrollAcquisitionFromLifecycle','drainAcquisitionJobs',
             'r3GetLifecycleStudio','r3SaveAutomationDraft','r3PublishAutomationDefinition','r3DryRunAutomationDefinition','r3SetLifecycleRuntimeControl',
             'r3ExecuteRecoveryCommand','r3GetCustomerLifecycleControl','r3SetCustomerLifecyclePreferences','r3RequestCancellation',
-            'r3GetInAppTreatment','r3RecordInAppTreatmentInteraction','r3ProjectLifecycleEvent','r3DrainLifecycleRuns'
+            'r3GetInAppTreatment','r3RecordInAppTreatmentInteraction','r3ProjectLifecycleEvent','r3DrainLifecycleRuns',
+            'feedbackCommand','r4GetFeedbackRuntimeControl','r4SetFeedbackRuntimeControl','r4QualifyReferralOnSubscription'
           ]) {
             if (!text.includes(name)) throw new Error(`Missing deployed function: ${name}`);
           }
-          console.log('Release 1-3 backend Functions are present.');
+          console.log('Release 1-4 backend Functions are present.');
           NODE
 
   backend-status:
@@ -151,6 +160,6 @@ jobs:
         run: |
           echo "Firestore deployment: ${{ needs.deploy-firestore.result }}"
           echo "Functions deployment: ${{ needs.deploy-functions.result }}"
-          echo "Outbound acquisition remains paused by default; Release 3 lifecycle email/SMS remains disabled; in-app is controlled separately."
+          echo "Release 4 feedback runtime remains paused by default; outbound feedback/referral messaging and live incentives remain disabled until separately activated."
           test "${{ needs.deploy-firestore.result }}" = "success"
           test "${{ needs.deploy-functions.result }}" = "success"

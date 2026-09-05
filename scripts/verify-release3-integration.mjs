@@ -17,7 +17,10 @@ const [contracts, projections, runtime, admin, functionIndex, router, rules, ind
 ]);
 
 requireCondition(contracts.includes('export type LifecycleChannel = "email" | "in-app"'), "Release 3 channel contract must stay email/in-app only; SMS is not approved.");
-requireCondition(!contracts.includes('LifecycleChannel = "email" | "sms"'), "SMS must not enter the Release 3 lifecycle action contract.");
+requireCondition(!contracts.includes('LifecycleChannel = "email" | "sms"'), "SMS must not enter the lifecycle action contract.");
+for (const kind of ["acquisition", "upsell", "renewal", "payment-recovery", "re-engagement", "cancellation", "win-back"]) {
+  requireCondition(contracts.includes(`"${kind}"`), `Release 3 treatment kind ${kind} must remain available.`);
+}
 requireCondition(projections.includes('"payment.failed": { allowedSources: ["provider_webhook", "trusted_server"]'), "Payment health must remain provider/server authoritative.");
 requireCondition(projections.includes('event.eventType === "subscription.renewed"') && projections.includes('event.source === "provider_webhook" || event.source === "trusted_server"'), "Subscription state must remain provider/server authoritative.");
 requireCondition(runtime.includes('if (effect.action.type === "email")') && runtime.includes('reason: "channel-not-ready"'), "Outbound lifecycle email must remain hard-held in the Release 3 worker.");
@@ -28,14 +31,14 @@ requireCondition(router.includes('RetentionLifecycleStudioPage') && router.inclu
 requireCondition(rules.includes('match /organizations/{organizationId}/{document=**}') && rules.includes('allow read, write: if false;'), "Organization Firestore state must remain browser-inaccessible.");
 requireCondition(indexes.includes('"collectionGroup": "release3Runs"') && indexes.includes('"dueAt"'), "Durable Release 3 worker query index is missing.");
 
-const release3Sources = [contracts, projections, runtime, admin].join("\n");
-requireCondition(!/survey/i.test(release3Sources), "Surveys are outside Release 3 and must not be composed into its contract/runtime.");
-requireCondition(!/referral/i.test(release3Sources), "Referrals are outside Release 3 and must not be composed into its contract/runtime.");
-requireCondition(!/release5|release 5/i.test(release3Sources), "Release 5 analytics must not be composed into Release 3.");
+// This is now a regression gate, not a historical source-freeze. Later releases may
+// add treatment kinds and worker branches, but they must not weaken the accepted R3
+// trust, channel, commercial, authorization, tenant, rules, or durable-worker guarantees above.
+requireCondition(!/release5|release 5/i.test([contracts, projections, runtime, admin].join("\n")), "Release 5 analytics must not be composed into the Release 3 runtime surface.");
 
 if (failures.length) {
-  console.error("Release 3 integration acceptance failed:");
+  console.error("Release 3 regression acceptance failed:");
   for (const failure of failures) console.error(`- ${failure}`);
   process.exit(1);
 }
-console.log("Release 3 integration acceptance passed: canonical contract, trust boundaries, fail-closed outbound behavior, routing, Functions exports, rules, and durable runtime index are composed.");
+console.log("Release 3 regression acceptance passed: accepted trust boundaries, fail-closed outbound behavior, routing, Functions exports, rules, and durable runtime remain intact with additive later-release extensions.");

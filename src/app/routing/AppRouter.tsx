@@ -12,6 +12,7 @@ import { CustomerLifecyclePreferencesPage } from "../../features/customer-prefer
 import { CustomerWorkspaceDetailPage, CustomerWorkspaceListPage } from "../../features/customer-workspace";
 import { ExperienceHost } from "../../features/experience/ExperienceHost";
 import { ExperienceRetentionHost } from "../../features/experience/ExperienceRetentionHost";
+import { OrganizationFeedbackAdminSurface, ParticipantReferralSurface, PendingReferralBinding, PublicReferralCapture, PublicSurveySurface } from "../../features/feedback/FeedbackSurfaces";
 import { AuthenticatedRoute, IdentityRouteBoundary, isIdentityRoute, OnboardingCompleteRoute } from "../../features/identity/IdentityBoundary";
 import { useAuth } from "../../features/identity/auth";
 import { LifecycleConfigurationPage } from "../../features/lifecycle-admin";
@@ -33,7 +34,6 @@ const participantRoutes = new Set([
   "/app/offers",
   "/app/notifications",
   "/app/feedback",
-  "/app/referrals",
   "/app/account",
   "/app/profile",
   "/app/settings",
@@ -69,9 +69,17 @@ function AuthenticatedParticipant({ children }: { children: ReactNode }) {
       demo={isDemo}
       onSignOut={logout}
     >
+      {currentOrganizationId ? <PendingReferralBinding organizationId={currentOrganizationId} /> : null}
       {children}
     </ParticipantShell>
   );
+}
+
+function ParticipantReferralRoute() {
+  const { currentOrganizationId } = useOrganization();
+  return currentOrganizationId
+    ? <ParticipantReferralSurface organizationId={currentOrganizationId} />
+    : <ParticipantStateView state="unavailable" title="Referral program unavailable" description="Select an organization before viewing referral activity." />;
 }
 
 function PlatformSurface({ section }: { section: string }) {
@@ -106,6 +114,8 @@ function OrganizationLifecycleContent({ organizationId, section, detail }: { org
     return <LifecycleAdminSurface organizationId={organizationId} runs={detail === "runs"} />;
   }
   if (section === "communications") return <CommunicationsAdminPage organizationId={organizationId} />;
+  if (section === "surveys") return <OrganizationFeedbackAdminSurface organizationId={organizationId} kind="survey" />;
+  if (section === "referrals") return <OrganizationFeedbackAdminSurface organizationId={organizationId} kind="program" />;
   return null;
 }
 
@@ -113,7 +123,7 @@ export function AppRouter() {
   const route = useRoute();
   const [first, second, third, fourth, fifth] = route.segments;
 
-  if (route.path === "/") return <PublicShell><ConfiguredPublicHome /></PublicShell>;
+  if (route.path === "/") return <PublicShell><PublicOrganizationScope>{organizationId => <><PublicReferralCapture organizationId={organizationId} /><ConfiguredPublicHome /></>}</PublicOrganizationScope></PublicShell>;
   if (publicInfoRoutes.includes(route.path)) return <PublicShell><PublicInfoPage path={route.path} /></PublicShell>;
   if (route.path === "/offers") return <PublicShell><PublicOrganizationScope>{(organizationId) => <PublicOffersPage organizationId={organizationId} />}</PublicOrganizationScope></PublicShell>;
   if (first === "offers" && second) return <PublicShell><PublicOrganizationScope>{(organizationId) => <PublicOfferDetail organizationId={organizationId} offerId={second} />}</PublicOrganizationScope></PublicShell>;
@@ -125,6 +135,7 @@ export function AppRouter() {
     );
   }
   if (first === "r" && second) return <PublicShell><ReferralLanding code={second} /></PublicShell>;
+  if (route.path === "/survey") return <PublicShell><PublicOrganizationScope>{organizationId => <PublicSurveySurface organizationId={organizationId} />}</PublicOrganizationScope></PublicShell>;
   if (first === "survey" && second) return <PublicShell><PublicSurvey surveyId={second} /></PublicShell>;
 
   if (isIdentityRoute(route)) return <IdentityRouteBoundary route={route} />;
@@ -138,6 +149,7 @@ export function AppRouter() {
         : route.path === "/app/offers" ? <ParticipantOffersPage />
         : route.path === "/app/billing" ? <ParticipantBillingPage />
         : route.path === "/app/settings" ? <CustomerLifecyclePreferencesPage />
+        : route.path === "/app/referrals" ? <ParticipantReferralRoute />
         : participantRoutes.has(route.path)
           ? <CustomerPage path={route.path} />
           : <ParticipantStateView state="unavailable" title="Participant destination unavailable" description="This /app route is not registered with the participant application skeleton." />;

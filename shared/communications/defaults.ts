@@ -5,7 +5,7 @@ import type {
   EmailTemplateContent,
 } from "./contracts.js";
 
-export const NURTURE_COMMUNICATION_DEFAULT_VERSION = "r2.2026-09-05";
+export const NURTURE_COMMUNICATION_DEFAULT_VERSION = "r4.2026-09-05";
 
 export interface DefaultCommunicationTemplate {
   id: CommunicationTemplateId;
@@ -81,6 +81,94 @@ const defaults: Record<CommunicationTemplateId, DefaultCommunicationTemplate> = 
       variables: ["customer.firstName", "offer.name", "offer.checkoutUrl", "preferences.url"],
     },
   },
+  "survey-invitation": {
+    id: "survey-invitation",
+    purpose: "marketing",
+    version: NURTURE_COMMUNICATION_DEFAULT_VERSION,
+    content: {
+      name: "Survey invitation",
+      subject: "Share optional feedback with {{organization.name}}",
+      body: "Hi {{customer.firstName}},\n\nIf you would like to share feedback, open {{survey.title}} here: {{survey.url}}\n\nYour participation is optional. Manage promotional email preferences: {{preferences.url}}",
+      variables: ["customer.firstName", "organization.name", "survey.title", "survey.url", "preferences.url"],
+    },
+  },
+  "survey-reminder": {
+    id: "survey-reminder",
+    purpose: "marketing",
+    version: NURTURE_COMMUNICATION_DEFAULT_VERSION,
+    content: {
+      name: "Survey reminder",
+      subject: "Optional feedback reminder from {{organization.name}}",
+      body: "Hi {{customer.firstName}},\n\nThere is still time to share optional feedback: {{survey.url}}\n\nManage promotional email preferences: {{preferences.url}}",
+      variables: ["customer.firstName", "organization.name", "survey.url", "preferences.url"],
+    },
+  },
+  "survey-thanks": {
+    id: "survey-thanks",
+    purpose: "transactional",
+    version: NURTURE_COMMUNICATION_DEFAULT_VERSION,
+    content: {
+      name: "Feedback acknowledgement",
+      subject: "Thank you for your feedback",
+      body: "Thank you. Your feedback was received. If you need help, contact {{support.email}}.",
+      variables: ["support.email"],
+    },
+  },
+  "feedback-recovery": {
+    id: "feedback-recovery",
+    purpose: "transactional",
+    version: NURTURE_COMMUNICATION_DEFAULT_VERSION,
+    content: {
+      name: "Feedback service recovery",
+      subject: "We would like to help",
+      body: "Thank you for telling us about your experience. If you would like help, contact {{support.email}}. Sharing feedback does not affect your purchased access.",
+      variables: ["support.email"],
+    },
+  },
+  "referral-invitation": {
+    id: "referral-invitation",
+    purpose: "marketing",
+    version: NURTURE_COMMUNICATION_DEFAULT_VERSION,
+    content: {
+      name: "Referral invitation",
+      subject: "Invite someone to {{organization.name}}",
+      body: "Hi {{customer.firstName}},\n\nIf you choose to share, review the current referral program and your link here: {{referral.centerUrl}}\n\nSharing is optional. Manage promotional email preferences: {{preferences.url}}",
+      variables: ["customer.firstName", "organization.name", "referral.centerUrl", "preferences.url"],
+    },
+  },
+  "referral-status": {
+    id: "referral-status",
+    purpose: "transactional",
+    version: NURTURE_COMMUNICATION_DEFAULT_VERSION,
+    content: {
+      name: "Referral status",
+      subject: "Your referral status changed",
+      body: "Review the current status and applicable program terms here: {{referral.centerUrl}}",
+      variables: ["referral.centerUrl"],
+    },
+  },
+  "referral-reward-issued": {
+    id: "referral-reward-issued",
+    purpose: "transactional",
+    version: NURTURE_COMMUNICATION_DEFAULT_VERSION,
+    content: {
+      name: "Referral benefit issued",
+      subject: "Your referral benefit is ready",
+      body: "Review your referral benefit and applicable program terms here: {{referral.centerUrl}}",
+      variables: ["referral.centerUrl"],
+    },
+  },
+  "referral-reward-reversed": {
+    id: "referral-reward-reversed",
+    purpose: "transactional",
+    version: NURTURE_COMMUNICATION_DEFAULT_VERSION,
+    content: {
+      name: "Referral benefit adjusted",
+      subject: "A referral benefit was adjusted",
+      body: "Review the current referral status and applicable terms here: {{referral.centerUrl}}\n\nQuestions? {{support.email}}",
+      variables: ["referral.centerUrl", "support.email"],
+    },
+  },
 };
 
 export const FICTIONAL_PREVIEW_VARIABLES: Required<CommunicationVariableValues> = {
@@ -97,6 +185,9 @@ export const FICTIONAL_PREVIEW_VARIABLES: Required<CommunicationVariableValues> 
   "application.publicUrl": "https://preview.nurture.test/",
   "preferences.url": "https://preview.nurture.test/preferences/email",
   "support.email": "support@example.test",
+  "survey.title": "Experience feedback",
+  "survey.url": "https://preview.nurture.test/survey#invitation=preview",
+  "referral.centerUrl": "https://preview.nurture.test/app/referrals",
 };
 
 export function getDefaultCommunicationTemplate(id: CommunicationTemplateId): DefaultCommunicationTemplate {

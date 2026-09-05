@@ -77,3 +77,10 @@ export {
   r3ProjectLifecycleEvent,
   r3DrainLifecycleRuns,
 } from "./lifecycle/release3-runtime.js";
+
+export { feedbackCommand } from "./feedback/entry.js";
+export {
+  r4GetFeedbackRuntimeControl,
+  r4SetFeedbackRuntimeControl,
+} from "./feedback/control.js";
+export { r4QualifyReferralOnSubscription } from "./feedback/triggers.js";

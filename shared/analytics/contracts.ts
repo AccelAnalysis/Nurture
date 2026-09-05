@@ -187,14 +187,69 @@ export const EVENT_CATALOG = {
     allowedSources: ["trusted_server"] as const,
     family: "communications",
   },
-  "survey.completed": {
-    owner: "future",
-    allowedSources: ["domain_action", "trusted_server"] as const,
+  "survey.invitation_created": {
+    owner: "E",
+    allowedSources: ["trusted_server"] as const,
     family: "satisfaction",
   },
+  "survey.completed": {
+    owner: "C",
+    allowedSources: ["trusted_server"] as const,
+    family: "satisfaction",
+  },
+  "survey.service_recovery_started": {
+    owner: "E",
+    allowedSources: ["trusted_server"] as const,
+    family: "satisfaction",
+  },
+  "survey.nps.promoter": {
+    owner: "F",
+    allowedSources: ["trusted_server"] as const,
+    family: "satisfaction",
+  },
+  "survey.nps.passive": {
+    owner: "F",
+    allowedSources: ["trusted_server"] as const,
+    family: "satisfaction",
+  },
+  "survey.nps.detractor": {
+    owner: "F",
+    allowedSources: ["trusted_server"] as const,
+    family: "satisfaction",
+  },
+  "referral.invitation_created": {
+    owner: "E",
+    allowedSources: ["trusted_server"] as const,
+    family: "referral",
+  },
   "referral.created": {
-    owner: "future",
-    allowedSources: ["domain_action", "trusted_server"] as const,
+    owner: "C",
+    allowedSources: ["trusted_server"] as const,
+    family: "referral",
+  },
+  "referral.registered": {
+    owner: "C",
+    allowedSources: ["trusted_server"] as const,
+    family: "referral",
+  },
+  "referral.qualified": {
+    owner: "E",
+    allowedSources: ["trusted_server"] as const,
+    family: "referral",
+  },
+  "referral.rejected": {
+    owner: "E",
+    allowedSources: ["trusted_server"] as const,
+    family: "referral",
+  },
+  "referral.reward_issued": {
+    owner: "E",
+    allowedSources: ["trusted_server"] as const,
+    family: "referral",
+  },
+  "referral.reward_reversed": {
+    owner: "E",
+    allowedSources: ["trusted_server"] as const,
     family: "referral",
   },
   "configuration.published": {

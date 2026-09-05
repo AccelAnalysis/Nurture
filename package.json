@@ -23,7 +23,8 @@
     "test:firestore-acceptance": "npm --prefix functions run build && npx -y firebase-tools@latest emulators:exec --project nurture-12398 --only auth,firestore \"node scripts/verify-firestore-rules.mjs && node functions/scripts/verify-firestore-backend.mjs\"",
     "test:experience": "node scripts/verify-experience-entitlements.mjs",
     "test:browser": "node scripts/verify-release-browser.mjs",
-    "test:release3": "node scripts/verify-release3-integration.mjs"
+    "test:release3": "node scripts/verify-release3-integration.mjs",
+    "test:release4": "node scripts/verify-release4-integration.mjs"
   },
   "dependencies": {
     "firebase": "^12.18.0",

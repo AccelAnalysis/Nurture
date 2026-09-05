@@ -10,7 +10,7 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "test": "npm run build && node --test lib/functions/src/billing/pricing.test.js lib/functions/src/billing/reconciliation.test.js lib/functions/src/communications/rendering.test.js lib/functions/src/communications/eligibility.test.js lib/functions/src/communications/webhook-security.test.js lib/functions/src/communications/acquisition-dispatch.test.js lib/functions/src/communications/outbox.test.js"
+    "test": "npm run build && node --test lib/functions/src/billing/pricing.test.js lib/functions/src/billing/reconciliation.test.js lib/functions/src/communications/rendering.test.js lib/functions/src/communications/eligibility.test.js lib/functions/src/communications/webhook-security.test.js lib/functions/src/communications/acquisition-dispatch.test.js lib/functions/src/communications/outbox.test.js lib/functions/src/feedback/feedback.test.js"
   },
   "dependencies": {
     "firebase-admin": "^14.3.0",

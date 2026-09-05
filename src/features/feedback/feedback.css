@@ -1,0 +1,220 @@
+.feedback-panel,
+.feedback-form,
+.feedback-admin {
+  width: min(100%, 860px);
+  margin-inline: auto;
+}
+
+.feedback-panel,
+.feedback-form {
+  background: var(--n-surface);
+  color: var(--n-text);
+  border: 1px solid var(--n-border);
+  border-radius: var(--n-radius-card);
+  padding: clamp(var(--n-space-5), 4vw, var(--n-space-8));
+}
+
+.feedback-form {
+  display: grid;
+  gap: var(--n-space-6);
+}
+
+.feedback-form h2,
+.feedback-panel h1,
+.feedback-panel h2,
+.feedback-admin h1,
+.feedback-admin h2 {
+  margin-top: 0;
+}
+
+.feedback-notice {
+  padding: var(--n-space-3) var(--n-space-4);
+  border: 1px solid var(--n-border);
+  border-radius: var(--n-radius-control);
+  background: var(--n-gradient-brand-soft);
+}
+
+.feedback-field {
+  display: grid;
+  gap: var(--n-space-2);
+  font-weight: 600;
+}
+
+.feedback-field input,
+.feedback-field textarea,
+.feedback-field select,
+.feedback-admin input,
+.feedback-admin textarea,
+.feedback-admin select {
+  min-height: var(--n-control-target);
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--n-border);
+  border-radius: var(--n-radius-control);
+  background: var(--n-surface);
+  color: var(--n-text);
+  padding: var(--n-space-3) var(--n-space-4);
+  font: inherit;
+}
+
+.feedback-field textarea,
+.feedback-admin textarea {
+  min-height: 112px;
+  resize: vertical;
+}
+
+.feedback-field input:focus-visible,
+.feedback-field textarea:focus-visible,
+.feedback-field select:focus-visible,
+.feedback-admin input:focus-visible,
+.feedback-admin textarea:focus-visible,
+.feedback-admin select:focus-visible,
+.feedback-panel button:focus-visible,
+.feedback-form button:focus-visible,
+.feedback-admin button:focus-visible {
+  outline: 2px solid var(--n-focus);
+  outline-offset: 2px;
+  box-shadow: var(--n-focus-ring);
+}
+
+.feedback-form fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.feedback-form legend {
+  margin-bottom: var(--n-space-3);
+  font-weight: 600;
+}
+
+.feedback-scale {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(44px, 1fr));
+  gap: var(--n-space-2);
+}
+
+.feedback-scale label {
+  position: relative;
+  display: grid;
+  min-height: var(--n-control-target);
+  place-items: center;
+  border: 1px solid var(--n-border);
+  border-radius: var(--n-radius-control);
+  cursor: pointer;
+}
+
+.feedback-scale input {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  opacity: 0;
+}
+
+.feedback-scale label:has(input:checked) {
+  border-color: var(--n-accent);
+  background: var(--n-gradient-brand-soft);
+  font-weight: 700;
+}
+
+.feedback-scale label:has(input:focus-visible) {
+  outline: 2px solid var(--n-focus);
+  outline-offset: 2px;
+}
+
+.feedback-scale-labels {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--n-space-4);
+  color: var(--n-text-secondary);
+  font-size: 0.875rem;
+}
+
+.feedback-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--n-space-3);
+  margin-block: var(--n-space-5);
+}
+
+.feedback-actions .feedback-field {
+  flex: 1 1 320px;
+}
+
+.feedback-panel button,
+.feedback-form button,
+.feedback-admin button {
+  min-height: var(--n-control-target);
+}
+
+.feedback-terms {
+  white-space: pre-wrap;
+  color: var(--n-text-secondary);
+}
+
+.feedback-records {
+  display: grid;
+  gap: var(--n-space-3);
+  padding: 0;
+  list-style: none;
+}
+
+.feedback-records li {
+  display: grid;
+  gap: var(--n-space-2);
+  padding: var(--n-space-4);
+  border: 1px solid var(--n-border);
+  border-radius: var(--n-radius-control);
+  background: var(--n-surface-raised);
+}
+
+.feedback-admin {
+  display: grid;
+  gap: var(--n-space-6);
+}
+
+.feedback-admin-toolbar,
+.feedback-admin-grid,
+.feedback-admin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--n-space-3);
+}
+
+.feedback-admin-grid > * {
+  flex: 1 1 280px;
+}
+
+.feedback-admin-card {
+  padding: var(--n-space-5);
+  border: 1px solid var(--n-border);
+  border-radius: var(--n-radius-card);
+  background: var(--n-surface);
+}
+
+.feedback-admin-card[aria-current="true"] {
+  border-color: var(--n-accent);
+}
+
+.feedback-admin-meta {
+  color: var(--n-text-secondary);
+  font-size: 0.9rem;
+}
+
+@media (max-width: 640px) {
+  .feedback-scale {
+    grid-template-columns: repeat(4, minmax(44px, 1fr));
+  }
+
+  .feedback-scale-labels {
+    display: grid;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .feedback-notice {
+    background: var(--n-surface-raised);
+  }
+}
