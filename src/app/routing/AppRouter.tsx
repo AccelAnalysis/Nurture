@@ -3,13 +3,16 @@ import { OrganizationShell, ParticipantShell, PlatformAdminShell, PublicShell } 
 import { EmptyState, LoadingState } from "../../components/ui";
 import { useOrganization } from "../../context/OrganizationContext";
 import { usePlatform } from "../../context/PlatformContext";
+import { OrganizationOffersPage, ParticipantBillingPage, ParticipantOffersPage, PublicOffersPage, PublicOfferDetail } from "../../features/billing/pages";
+import { CommunicationsAdminPage } from "../../features/communications";
 import { BrandSiteAdminPage } from "../../features/configuration/BrandSiteAdminPage";
 import { ConfiguredPublicHome } from "../../features/configuration/ConfiguredPublicHome";
 import { PublicOrganizationScope } from "../../features/configuration/ConfigurationProvider";
-import { OrganizationOffersPage, ParticipantBillingPage, ParticipantOffersPage, PublicOffersPage, PublicOfferDetail } from "../../features/billing/pages";
+import { CustomerWorkspaceDetailPage, CustomerWorkspaceListPage } from "../../features/customer-workspace";
 import { ExperienceHost } from "../../features/experience/ExperienceHost";
 import { AuthenticatedRoute, IdentityRouteBoundary, isIdentityRoute, OnboardingCompleteRoute } from "../../features/identity/IdentityBoundary";
 import { useAuth } from "../../features/identity/auth";
+import { LifecycleConfigurationPage } from "../../features/lifecycle-admin";
 import { OnboardingRouteBoundary } from "../../features/onboarding/OnboardingBoundary";
 import { OrganizationAdminRoute } from "../../features/organization/OrganizationAdminRoute";
 import { ParticipantStateView } from "../../features/participant/ParticipantStateView";
@@ -73,6 +76,30 @@ function PlatformSurface({ section }: { section: string }) {
   return <PlatformAdminShell role={platform.role} can={platform.can}><PlatformPage section={section} /></PlatformAdminShell>;
 }
 
+function LifecycleAdminSurface({ organizationId, runs }: { organizationId: string; runs: boolean }) {
+  const organization = useOrganization();
+  return (
+    <LifecycleConfigurationPage
+      organizationId={organizationId}
+      canManage={organization.can("lifecycle.manage", organizationId)}
+      initialTab={runs ? "Run history" : "Configuration"}
+    />
+  );
+}
+
+function OrganizationRelease2Content({ organizationId, section, detail }: { organizationId: string; section: string; detail?: string }) {
+  if (section === "customers") {
+    return detail
+      ? <CustomerWorkspaceDetailPage organizationId={organizationId} customerId={detail} />
+      : <CustomerWorkspaceListPage organizationId={organizationId} />;
+  }
+  if (section === "lifecycle") {
+    return <LifecycleAdminSurface organizationId={organizationId} runs={detail === "runs"} />;
+  }
+  if (section === "communications") return <CommunicationsAdminPage organizationId={organizationId} />;
+  return null;
+}
+
 export function AppRouter() {
   const route = useRoute();
   const [first, second, third, fourth, fifth] = route.segments;
@@ -123,13 +150,14 @@ export function AppRouter() {
     if (["brand", "site", "configuration"].includes(section)) return <Redirect to={`/org/${organizationId}/admin/brand-site`} />;
     const detail = fifth;
     const capability = section === "brand-site" ? "brand.view" : organizationSectionCapability[section] ?? "workspace.view";
-    const content = section === "brand-site" ? <BrandSiteAdminPage key={organizationId} organizationId={organizationId} />
+    const release2Content = OrganizationRelease2Content({ organizationId, section, detail });
+    const content = release2Content ?? (section === "brand-site" ? <BrandSiteAdminPage key={organizationId} organizationId={organizationId} />
       : section === "offers" ? <OrganizationOffersPage organizationId={organizationId} />
       : section === "contacts" && detail === "new"
       ? <AddContact organizationId={organizationId} />
       : section === "contacts" && detail
         ? <ContactDetail organizationId={organizationId} contactId={detail} />
-        : <OrganizationPage organizationId={organizationId} section={section} />;
+        : <OrganizationPage organizationId={organizationId} section={section} />);
     const effectiveCapability = section === "contacts" && detail === "new" ? "contacts.manage" : capability;
 
     return (
