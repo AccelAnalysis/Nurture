@@ -3,13 +3,13 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { chromium } from '@playwright/test';
 
-const external = process.env.R1_SMOKE_BASE_URL;
+const external = process.env.RELEASE_SMOKE_BASE_URL ?? process.env.R1_SMOKE_BASE_URL;
 const base = external ?? 'http://127.0.0.1:4173';
 const server = external ? null : spawn(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--host', '127.0.0.1', '--port', '4173'], { stdio: 'ignore' });
 let browser;
 let page;
 const errors = [];
-const output = 'test-results/release-1';
+const output = 'test-results/release-2';
 const results = [];
 try {
   await mkdir(output, { recursive: true });
@@ -23,13 +23,23 @@ try {
   page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   page.setDefaultTimeout(15000);
   page.on('pageerror', (error) => errors.push(error.message));
-  for (const route of ['/', '/offers', '/offers/primary', '/experience', '/experience/deep-dive', '/register', '/sign-in', '/app/experience', '/org/nurture-demo/admin/brand-site', '/platform']) {
+  const routeChecks = [
+    '/', '/offers', '/offers/primary', '/experience', '/experience/deep-dive', '/register', '/sign-in', '/app/experience',
+    '/org/nurture-demo/admin/brand-site', '/org/nurture-demo/admin/customers', '/org/nurture-demo/admin/lifecycle',
+    '/org/nurture-demo/admin/communications', '/platform', '/platform/operations',
+  ];
+  for (const route of routeChecks) {
     console.log(`Checking ${route}`);
     await page.goto(`${base}${route}`, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => document.body.innerText.trim().length > 80);
     await page.waitForTimeout(200);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${route} must not overflow horizontally`);
     results.push({ route, destination: new URL(page.url()).pathname, meaningfulContent: true });
+  }
+  for (const protectedRoute of ['/org/nurture-demo/admin/customers', '/org/nurture-demo/admin/lifecycle', '/org/nurture-demo/admin/communications', '/platform/operations']) {
+    await page.goto(`${base}${protectedRoute}`, { waitUntil: 'domcontentloaded' });
+    await page.waitForURL('**/sign-in?**');
+    assert.equal(new URL(page.url()).pathname, '/sign-in', `${protectedRoute} must remain behind the trusted identity boundary in the fail-closed production bundle`);
   }
   await page.goto(base);
   await page.locator('h1').waitFor();
@@ -65,8 +75,16 @@ try {
     await page.screenshot({ path: `${output}/${route.slice(1) || 'home'}-mobile.png`, fullPage: true });
   }
   assert.deepEqual(errors, [], 'The browser must not throw application errors.');
-  await writeFile(`${output}/results.json`, JSON.stringify({ base, passed: true, routes: results, pageErrors: errors, tested: ['public completion', 'registration handoff', 'N logo', 'desktop/mobile reflow', 'demo-role forgery rejected', 'local configuration forgery ignored', 'unavailable account form disabled'], notTested: ['real authentication', 'Firestore rules', 'Stripe checkout/webhook', 'durable configuration publishing', 'real YouTube playback'] }, null, 2));
-  console.log('Release 1 Hosting browser checks passed. Backend acceptance remains separate.');
+  await writeFile(`${output}/results.json`, JSON.stringify({
+    base,
+    release: '2-integration',
+    passed: true,
+    routes: results,
+    pageErrors: errors,
+    tested: ['public completion', 'registration handoff', 'N logo', 'desktop/mobile reflow', 'R2 protected-route fail-closed behavior', 'demo-role forgery rejected', 'local configuration forgery ignored', 'unavailable account form disabled'],
+    notTested: ['real authentication', 'Firestore rules', 'durable acquisition store/worker', 'R2 lifecycle projection persistence', 'real SendGrid delivery/callback', 'Stripe checkout/webhook', 'durable configuration publishing', 'real YouTube playback'],
+  }, null, 2));
+  console.log('Release 2 Hosting browser checks passed. Backend/provider acceptance remains separate.');
 } catch (error) {
   if (page) {
     await page.screenshot({ path: `${output}/failure.png`, fullPage: true }).catch(() => {});
