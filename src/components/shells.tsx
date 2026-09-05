@@ -1,10 +1,11 @@
 import { useEffect, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { useOrganization } from "../context/OrganizationContext";
 import { useConfiguration } from "../features/configuration/ConfigurationProvider";
+import { buildRegistrationHandoffHref, resolvePublicHandoffHref } from "../features/configuration/publicHandoffs";
 import { ConfiguredBrand } from "../features/configuration/PublicSite";
 import { applyPublicMetadata, trackPublicEvent } from "../features/public/publicBoundary";
 import { Link, useRoute } from "../router";
-import type { OrganizationCapability, PlatformCapability, PlatformRole } from "../security/authorization";
+import { organizationSectionCapability, type OrganizationCapability, type PlatformCapability, type PlatformRole } from "../security/authorization";
 import { Avatar, Badge, EmptyState } from "./ui";
 
 export function Brand() {
@@ -32,6 +33,12 @@ export function PublicShell({ children }: { children: ReactNode }) {
   }
 
   const publicLinks = publicConfiguration.site.navigation;
+  const createAccountHref = buildRegistrationHandoffHref({
+    organizationId: publicOrganizationId,
+    entryPoint: "public",
+    source: "public-shell",
+  });
+  const contextualHref = (href: string) => resolvePublicHandoffHref(href, publicOrganizationId);
   const captureHandoff = (event: ReactMouseEvent<HTMLDivElement>) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
@@ -40,9 +47,9 @@ export function PublicShell({ children }: { children: ReactNode }) {
     if (!destination || !destination.startsWith("/")) return;
     const common = { organizationId: publicOrganizationId, destination };
     if (link?.classList.contains("button")) trackPublicEvent("public.cta_selected", common);
-    if (destination === "/experience") trackPublicEvent("public.trial_entry_handoff", common);
+    if (destination.startsWith("/experience")) trackPublicEvent("public.trial_entry_handoff", common);
     else if (destination.startsWith("/offers")) trackPublicEvent("public.offer_handoff", common);
-    else if (["/sign-in", "/register"].includes(destination)) trackPublicEvent("public.identity_handoff", common);
+    else if (destination.startsWith("/sign-in") || destination.startsWith("/register")) trackPublicEvent("public.identity_handoff", common);
   };
 
   const publicStyle = { "--n-accent": publicConfiguration.brand.accentColor } as CSSProperties;
@@ -51,14 +58,14 @@ export function PublicShell({ children }: { children: ReactNode }) {
     <div className="site-shell" onClickCapture={captureHandoff} style={publicStyle}>
       <header className="public-header content-width">
         <ConfiguredBrand configuration={publicConfiguration} />
-        <nav aria-label="Primary">{publicLinks.slice(0, 4).map((item) => <Link key={item.id} href={item.href}>{item.label}</Link>)}</nav>
+        <nav aria-label="Primary">{publicLinks.slice(0, 4).map((item) => <Link key={item.id} href={contextualHref(item.href)}>{item.label}</Link>)}</nav>
         <div className="header-actions">
           <Link href="/sign-in">Sign In</Link>
-          <Link className="button button-small" href="/register">Create Account</Link>
+          <Link className="button button-small" href={createAccountHref}>Create Account</Link>
           <details className="mobile-public-menu">
             <summary aria-label="Open navigation">Menu</summary>
             <div>
-              {publicLinks.map((item) => <Link key={item.id} href={item.href}>{item.label}</Link>)}
+              {publicLinks.map((item) => <Link key={item.id} href={contextualHref(item.href)}>{item.label}</Link>)}
               <Link href={publicConfiguration.site.privacyHref}>Privacy</Link>
               <Link href={publicConfiguration.site.termsHref}>Terms</Link>
             </div>
@@ -69,9 +76,9 @@ export function PublicShell({ children }: { children: ReactNode }) {
       <footer className="public-footer">
         <div className="content-width footer-grid">
           <div><ConfiguredBrand configuration={publicConfiguration} /><p>{publicConfiguration.site.footerTagline}</p><small>{publicConfiguration.site.copyrightText}</small></div>
-          <div><h3>Explore</h3>{publicLinks.map((item) => <Link key={item.id} href={item.href}>{item.label}</Link>)}</div>
+          <div><h3>Explore</h3>{publicLinks.map((item) => <Link key={item.id} href={contextualHref(item.href)}>{item.label}</Link>)}</div>
           <div><h3>Trust</h3><Link href={publicConfiguration.site.privacyHref}>Privacy</Link><Link href={publicConfiguration.site.termsHref}>Terms</Link><Link href="/help">Support</Link></div>
-          <div><h3>Account</h3><Link href="/sign-in">Sign In</Link><Link href="/register">Create Account</Link>{publicConfiguration.site.contactEmail ? <Link href={`mailto:${publicConfiguration.site.contactEmail}`}>Contact</Link> : null}</div>
+          <div><h3>Account</h3><Link href="/sign-in">Sign In</Link><Link href={createAccountHref}>Create Account</Link>{publicConfiguration.site.contactEmail ? <Link href={`mailto:${publicConfiguration.site.contactEmail}`}>Contact</Link> : null}</div>
         </div>
       </footer>
     </div>
@@ -89,7 +96,6 @@ const appNav = [
 ] as const;
 const accountNav = [["Account", "/app/account"], ["Profile", "/app/profile"], ["Settings", "/app/settings"], ["Billing", "/app/billing"], ["Help", "/app/help"]] as const;
 const mobileAppNav = [["Home", "/app"], ["Experience", "/app/experience"], ["Secondary", "/app/secondary"], ["Notifications", "/app/notifications"], ["Account", "/app/account"]] as const;
-const trialNav = [["Experience", "/experience"], ["Offers", "/offers"], ["Create Account", "/register"]] as const;
 
 export function ParticipantShell({
   children,
@@ -109,7 +115,17 @@ export function ParticipantShell({
   onSignOut?: () => void | Promise<void>;
 }) {
   const route = useRoute();
+  const { publicOrganizationId } = useConfiguration();
   const authenticated = mode === "authenticated";
+  const trialRegistrationHref = publicOrganizationId
+    ? buildRegistrationHandoffHref({
+        organizationId: publicOrganizationId,
+        entryPoint: "trial",
+        returnTo: "/app/experience",
+        source: "participant-trial-shell",
+      })
+    : "/register";
+  const trialNav = [["Experience", "/experience"], ["Offers", "/offers"], ["Create Account", trialRegistrationHref]] as const;
   return (
     <div className={`app-layout participant-layout participant-${mode}`}>
       <aside className="sidebar">
@@ -129,7 +145,7 @@ export function ParticipantShell({
       <div className="app-main">
         <header className="app-topbar">
           <span className="muted">{authenticated ? "Nurture app" : "Nurture trial experience"}</span>
-          {authenticated ? <Link className="user-chip" href="/app/account"><Avatar name={displayName ?? "User"} /><span>{displayName ?? "Account"}</span></Link> : <Link href="/register">Create account</Link>}
+          {authenticated ? <Link className="user-chip" href="/app/account"><Avatar name={displayName ?? "User"} /><span>{displayName ?? "Account"}</span></Link> : <Link href={trialRegistrationHref}>Create account</Link>}
         </header>
         <main className="app-content">{children}</main>
         <nav className={`mobile-nav ${authenticated ? "" : "trial-mobile-nav"}`} aria-label="Mobile participant application">
@@ -140,11 +156,12 @@ export function ParticipantShell({
   );
 }
 
+const brandViewCapability = organizationSectionCapability.brand ?? "settings.manage";
 const orgNav: Array<[string, string, OrganizationCapability]> = [
   ["Overview", "", "workspace.view"],
   ["Dashboard", "/dashboard", "workspace.view"],
   ["Profile", "/profile", "profile.manage"],
-  ["Brand & Site", "/brand-site", "settings.manage"],
+  ["Brand & Site", "/brand-site", brandViewCapability],
   ["Team & Access", "/members", "members.view"],
   ["Roles", "/roles", "roles.manage"],
   ["Invitations", "/invitations", "members.manage"],
@@ -166,6 +183,13 @@ export function OrganizationShell({ children, organizationId }: { children: Reac
   const { getAccess } = useOrganization();
   const access = getAccess(organizationId);
   const base = `/org/${organizationId}/admin`;
+  const mobileItems: Array<[string, string, OrganizationCapability]> = [
+    ["Dashboard", "/dashboard", "workspace.view"],
+    ["Brand & Site", "/brand-site", brandViewCapability],
+    ["Contacts", "/contacts", "contacts.view"],
+    ["Surveys", "/surveys", "surveys.manage"],
+    ["Settings", "/settings", "settings.manage"],
+  ];
   return (
     <div className="app-layout org-layout">
       <aside className="sidebar">
@@ -183,7 +207,7 @@ export function OrganizationShell({ children, organizationId }: { children: Reac
         <header className="app-topbar"><span>Organization administration</span><div className="scope-actions"><Badge tone="accent">Organization scope</Badge><Link href="/app/account">Account</Link></div></header>
         <main className="app-content">{children}</main>
         <nav className="mobile-nav org-mobile-nav" aria-label="Mobile organization administration">
-          {[["Dashboard", "/dashboard"], ["Brand & Site", "/brand-site"], ["Contacts", "/contacts"], ["Surveys", "/surveys"], ["Settings", "/settings"]].map(([label, suffix]) => {
+          {mobileItems.filter(([, , capability]) => access.can(capability)).map(([label, suffix]) => {
             const href = `${base}${suffix}`;
             return <Link key={href} href={href} className={route.path === href ? "active" : ""}>{label}</Link>;
           })}
