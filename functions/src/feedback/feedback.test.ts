@@ -99,6 +99,7 @@ function fixture() {
     admit: async () => ({ allowed: true, reason: "allowed" }),
     referralSignal: async () => true,
     qualification: async (_tx, _scope, evidenceId) => qualifications.get(evidenceId) ?? null,
+    syncAutomation: async () => undefined,
   };
   const staff: TrustedFeedbackActor = { uid: "staff", capabilities: new Set(["surveys.view", "surveys.manage", "referrals.view", "referrals.manage"]) };
   const c1: TrustedFeedbackActor = { uid: "u1", customerId: "c1", capabilities: new Set() };
