@@ -21,11 +21,11 @@ import { getControlledTestAllowlist } from "./config.js";
 import { dispatchEmail } from "./service.js";
 import {
   getEmailSenderReadiness,
-  getEmailSuppression,
   getPublishedCommunicationTemplate,
   hashRecipientEmail,
   normalizeEmailAddress,
 } from "./store.js";
+import { getEffectiveEmailSuppression } from "./suppression.js";
 
 const approvedTemplateIds = new Set<string>(communicationTemplateIds);
 
@@ -49,11 +49,7 @@ export interface CurrentCommunicationContext {
   variables: CommunicationVariableValues;
 }
 
-/**
- * Final composition supplies this adapter from C plus the authoritative public,
- * Experience and commercial readers. D owns how those facts are interpreted for
- * email eligibility; E never receives the raw address or consent object.
- */
+/** Final composition supplies this adapter from C plus authoritative domain readers. */
 export interface CurrentCommunicationContextPort {
   readCurrent(input: AcquisitionEmailEligibilityInput): Promise<CurrentCommunicationContext>;
 }
@@ -127,7 +123,7 @@ async function evaluateCurrentContext(
     getPublishedCommunicationTemplate(input.organizationId, templateId, templateVersion),
     getEmailSenderReadiness(input.organizationId),
     recipientHash
-      ? getEmailSuppression(recipientHash)
+      ? getEffectiveEmailSuppression({ organizationId: input.organizationId, recipientHash, purpose })
       : Promise.resolve({ suppressed: false, scope: "none", observedAt: checkedAt } satisfies EmailSuppressionSnapshot),
   ]);
 
@@ -180,9 +176,7 @@ function mapRecordToSubmission(record: MessageDeliveryRecord): AcquisitionEmailS
       ...(providerRequestId(record) ? { providerRequestId: providerRequestId(record) } : {}),
     };
   }
-  if (record.status === "suppressed" || record.status === "held" || record.status === "cancelled") {
-    return { status: "suppressed", reason: record.statusReason ?? `Communication ${record.status}.` };
-  }
+  if (record.status === "suppressed" || record.status === "held" || record.status === "cancelled") return { status: "suppressed", reason: record.statusReason ?? `Communication ${record.status}.` };
   const attempt = record.attempts[record.attempts.length - 1];
   if (record.status === "failed" && attempt?.outcome === "retryable-failure") {
     return {
@@ -213,11 +207,6 @@ function dispatchCommand(input: AcquisitionEmailSubmitInput, evaluated: Evaluate
   } as const;
 }
 
-/**
- * Track D implementation of E's canonical AcquisitionEmailDispatchPort. `submit`
- * re-reads context and runs D's evaluator again after E has persisted its
- * provider-submission ambiguity barrier.
- */
 export function createAcquisitionEmailDispatchAdapter(
   source: CurrentCommunicationContextPort,
   provider?: EmailIntegrationPort,
@@ -225,7 +214,6 @@ export function createAcquisitionEmailDispatchAdapter(
   return {
     async evaluate(input: AcquisitionEmailEligibilityInput): Promise<AcquisitionEmailEligibilityResult> {
       if (input.dataMode === "preview" || input.dataMode === "demo" || input.dataMode === "development") {
-        // E records these modes as dry-run immediately after evaluate and never calls submit.
         return { status: "eligible", checkedAt: new Date().toISOString(), recipientRef: `dry-run:${input.subjectKind}:${input.subjectId}` };
       }
       try {
@@ -243,8 +231,6 @@ export function createAcquisitionEmailDispatchAdapter(
     },
 
     async submit(input: AcquisitionEmailSubmitInput): Promise<AcquisitionEmailSubmitResult> {
-      // Never trust the earlier evaluate result as current permission. Re-read C/D
-      // facts after E's ambiguity barrier and immediately before provider dispatch.
       let evaluated: EvaluatedContext;
       try {
         evaluated = await evaluateCurrentContext(source, input);
@@ -264,11 +250,15 @@ export function createAcquisitionEmailDispatchAdapter(
       };
 
       const recipientChanged = evaluated.context.recipientRef !== input.recipientRef;
+      const finalEligibilityRejected = evaluated.eligibility.outcome !== "eligible" || !recipientEmail;
+      const forcedSuppressionReason = recipientChanged
+        ? "recipient-reference-changed-after-initial-eligibility"
+        : finalEligibilityRejected
+          ? `final-dispatch-recheck-${evaluated.eligibility.reason}`
+          : undefined;
       const result = await dispatchEmail(
         dispatchCommand(input, evaluated),
-        recipientChanged
-          ? { ...prerequisites, forcedSuppressionReason: "recipient-reference-changed-after-initial-eligibility" }
-          : prerequisites,
+        forcedSuppressionReason ? { ...prerequisites, forcedSuppressionReason } : prerequisites,
         provider,
       );
       return mapRecordToSubmission(result.record);
