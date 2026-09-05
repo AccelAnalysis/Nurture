@@ -160,7 +160,10 @@ export const EVENT_CATALOG = {
 } as const;
 
 export type NurtureEventType = keyof typeof EVENT_CATALOG;
-export type AnalyticsFamily = (typeof EVENT_CATALOG)[NurtureEventType]["family"];
+/** Registered module events are namespaced under experience.<module>.<event>. */
+export type ExperienceModuleEventType = `experience.${string}.${string}`;
+export type AnalyticsEventType = NurtureEventType | ExperienceModuleEventType;
+export type AnalyticsFamily = (typeof EVENT_CATALOG)[NurtureEventType]["family"] | "experience-module";
 
 export interface LifecycleSubject {
   kind: LifecycleSubjectKind;
@@ -173,7 +176,7 @@ export interface LifecycleSubject {
  */
 export interface LifecycleEventSubmission {
   eventId: string;
-  eventType: NurtureEventType;
+  eventType: AnalyticsEventType;
   schemaVersion: typeof ANALYTICS_SCHEMA_VERSION;
   occurredAt: string;
   sessionId?: string;
@@ -181,8 +184,11 @@ export interface LifecycleEventSubmission {
   idempotencyKey: string;
   dataMode: AnalyticsDataMode;
   organizationIdHint?: string;
+  identityIdHint?: string;
+  customerIdHint?: string;
   subjectHint?: LifecycleSubject;
   experienceId?: string;
+  experienceModuleId?: string;
   experienceModuleVersion?: string;
   offerId?: string;
   payload: EventPayload;
@@ -191,7 +197,7 @@ export interface LifecycleEventSubmission {
 /** Persisted form after a trusted boundary validates and binds the submission. */
 export interface LifecycleEventEnvelope {
   eventId: string;
-  eventType: NurtureEventType;
+  eventType: AnalyticsEventType;
   schemaVersion: typeof ANALYTICS_SCHEMA_VERSION;
   organizationId: string;
   subjectId?: string;
@@ -199,6 +205,7 @@ export interface LifecycleEventEnvelope {
   identityId?: string;
   customerId?: string;
   experienceId?: string;
+  experienceModuleId?: string;
   experienceModuleVersion?: string;
   offerId?: string;
   sessionId?: string;
@@ -219,8 +226,11 @@ export interface CreateSubmissionOptions {
   idempotencyKey?: string;
   dataMode?: AnalyticsDataMode;
   organizationIdHint?: string;
+  identityIdHint?: string;
+  customerIdHint?: string;
   subjectHint?: LifecycleSubject;
   experienceId?: string;
+  experienceModuleId?: string;
   experienceModuleVersion?: string;
   offerId?: string;
 }
@@ -233,6 +243,7 @@ export interface TrustedEventBinding {
   identityId?: string;
   customerId?: string;
   experienceId?: string;
+  experienceModuleId?: string;
   experienceModuleVersion?: string;
   offerId?: string;
   dataMode?: AnalyticsDataMode;
