@@ -88,10 +88,14 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
   const normalizedPath = normalizeRelativePath(relativePath);
   const authenticated = accessMode === "authenticated" && Boolean(currentUser);
   const authenticatedOrganizationId = accessMode === "authenticated" ? currentOrganizationId ?? undefined : undefined;
+  const requestedOrganizationId = runtime.organizationSource.resolveOrganizationId({
+    accessMode,
+    authenticatedOrganizationId,
+  }) ?? undefined;
   const experience = publishedExperience !== "loading" && publishedExperience.status === "ready"
     ? publishedExperience.experience
     : null;
-  const effectiveOrganizationId = experience?.organizationId ?? authenticatedOrganizationId;
+  const effectiveOrganizationId = experience?.organizationId ?? requestedOrganizationId;
   const customerId = customerResult !== "loading" && customerResult.status === "ready"
     ? customerResult.customerId
     : undefined;
@@ -126,13 +130,13 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
     }
 
     if (!runtime.definitionSource) {
-      setPublishedExperience({ status: "ready", experience: createRegisteredExperience(registration, authenticatedOrganizationId ?? null) });
+      setPublishedExperience({ status: "ready", experience: createRegisteredExperience(registration, requestedOrganizationId ?? null) });
       return;
     }
 
     setPublishedExperience("loading");
     runtime.definitionSource.loadPublishedExperience({
-      organizationId: authenticatedOrganizationId,
+      organizationId: requestedOrganizationId,
       slot,
       moduleId: registration.id,
       moduleVersion: registration.moduleVersion,
@@ -146,7 +150,7 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
         setPublishedExperience({ status: "error", reason: "The published Experience does not match the trusted module registration." });
         return;
       }
-      if (authenticatedOrganizationId && loaded.organizationId !== authenticatedOrganizationId) {
+      if (requestedOrganizationId && loaded.organizationId !== requestedOrganizationId) {
         setPublishedExperience({ status: "error", reason: "The published Experience belongs to a different organization scope." });
         return;
       }
@@ -162,7 +166,7 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
       });
     });
     return () => { cancelled = true; };
-  }, [authenticatedOrganizationId, registration, runtime.definitionSource, slot]);
+  }, [registration, requestedOrganizationId, runtime.definitionSource, slot]);
 
   useEffect(() => {
     let cancelled = false;
@@ -171,10 +175,10 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
       return;
     }
     setCustomerResult("loading");
-    runtime.customerSource.resolveCustomer({
-      organizationId: authenticatedOrganizationId,
-      identityId: currentUser.uid,
-    }).then((result) => {
+    // Release 1 follows the completed C/D contract: resolve the stable Nurture
+    // Customer/Profile identity, then validate organization scope separately on
+    // the Experience and entitlement records. Do not synthesize a tenant Customer.
+    runtime.customerSource.resolveCustomer({ identityId: currentUser.uid }).then((result) => {
       if (!cancelled) setCustomerResult(result);
     }).catch((reason: unknown) => {
       if (!cancelled) setCustomerResult({
@@ -183,7 +187,7 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
       });
     });
     return () => { cancelled = true; };
-  }, [accessMode, authenticatedOrganizationId, currentUser, runtime.customerSource]);
+  }, [accessMode, currentUser, runtime.customerSource]);
 
   useEffect(() => {
     let cancelled = false;
@@ -321,7 +325,8 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
   }
 
   if (route.capability) {
-    const decision = canUse(route.capability);
+    const capabilityKey = route.capability;
+    const decision = canUse(capabilityKey);
     if (!decision.allowed) {
       const authenticationRequired = decision.reason === "authentication-required";
       return (
@@ -333,7 +338,10 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
                 sessionStorage.setItem("nurture-experience-return-path", moduleHref(basePath(slot, "authenticated"), normalizedPath));
                 navigate("/register");
               }}>Create account</Button>
-            : <Link className="button" href={`${accessMode === "authenticated" ? "/app/offers" : "/offers"}?capability=${encodeURIComponent(route.capability)}`}>Review access options</Link>}
+            : <Button onClick={() => {
+                submitHostEvent("experience.premium_feature_requested", { capabilityKey, reason: decision.reason });
+                navigate(`${accessMode === "authenticated" ? "/app/offers" : "/offers"}?capability=${encodeURIComponent(capabilityKey)}`);
+              }}>Review access options</Button>}
         />
       );
     }
@@ -362,6 +370,7 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
       navigate("/register");
     },
     requestUpgrade(capabilityKey) {
+      submitHostEvent("experience.premium_feature_requested", { capabilityKey });
       const destination = accessMode === "authenticated" ? "/app/offers" : "/offers";
       navigate(`${destination}?capability=${encodeURIComponent(capabilityKey)}`);
     },
