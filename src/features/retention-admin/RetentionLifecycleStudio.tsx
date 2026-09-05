@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { AutomationDefinitionV3, RecoveryCommandType } from "../../../shared/release3/contracts";
+import type { AutomationDefinitionV3, RecoveryCommandType, TreatmentAction } from "../../../shared/release3/contracts";
 import { explainDefinition, validateDefinition, type CustomerRetentionSnapshot, type LifecycleStudioPort } from "./model";
 import "./retention-admin.css";
 
@@ -28,12 +28,20 @@ export function RetentionLifecycleStudio({ organizationId, initialDefinition, sn
   }
 
   const update = <K extends keyof AutomationDefinitionV3>(key: K, value: AutomationDefinitionV3[K]) => setDefinition((current) => ({ ...current, [key]: value }));
+  const updateAction = (branchIndex: number, actionIndex: number, nextAction: TreatmentAction) => setDefinition((current) => ({
+    ...current,
+    branches: current.branches.map((branch, currentBranchIndex) => currentBranchIndex !== branchIndex ? branch : {
+      ...branch,
+      actions: branch.actions.map((action, currentActionIndex) => currentActionIndex === actionIndex ? nextAction : action),
+    }),
+  }));
+  const feedbackKind = definition.kind === "survey" || definition.kind === "referral";
 
   return <section className="r3-studio" aria-labelledby="r3-studio-title">
     <header>
-      <p className="r3-studio__muted">Release 3 lifecycle studio · organization scoped</p>
-      <h1 id="r3-studio-title">Expansion, retention, and re-engagement</h1>
-      <p>Author approved lifecycle rules without giving the browser authority to execute financial, entitlement, consent, or delivery mutations.</p>
+      <p className="r3-studio__muted">Lifecycle studio · organization scoped</p>
+      <h1 id="r3-studio-title">Lifecycle treatments</h1>
+      <p>Author approved lifecycle rules without giving the browser authority to execute financial, entitlement, consent, delivery, survey-classification, or reward mutations.</p>
     </header>
 
     <div className="r3-studio__grid">
@@ -44,7 +52,7 @@ export function RetentionLifecycleStudio({ organizationId, initialDefinition, sn
         </label>
         <label className="r3-studio__field">Treatment
           <select value={definition.kind} onChange={(event) => update("kind", event.currentTarget.value as AutomationDefinitionV3["kind"])}>
-            <option value="upsell">Contextual upsell</option><option value="renewal">Renewal</option><option value="payment-recovery">Payment recovery</option><option value="re-engagement">Re-engagement</option><option value="cancellation">Cancellation</option><option value="win-back">Win-back</option>
+            <option value="upsell">Contextual upsell</option><option value="renewal">Renewal</option><option value="payment-recovery">Payment recovery</option><option value="re-engagement">Re-engagement</option><option value="cancellation">Cancellation</option><option value="win-back">Win-back</option><option value="survey">Survey invitation</option><option value="referral">Referral invitation</option>
           </select>
         </label>
         <label className="r3-studio__field">Registered trigger
@@ -72,6 +80,28 @@ export function RetentionLifecycleStudio({ organizationId, initialDefinition, sn
           </select>
         </label>
         <label className="r3-studio__field"><span>Enabled</span><input type="checkbox" checked={definition.enabled} onChange={(event) => update("enabled", event.currentTarget.checked)} /></label>
+
+        {feedbackKind ? <div className="r3-studio__panel">
+          <h3>{definition.kind === "survey" ? "Survey" : "Referral"} action</h3>
+          <p className="r3-studio__muted">Release 4 uses the existing durable in-app action. For a survey, the template ID is the published survey ID. For a referral, it is the published referral-program ID. The worker creates the version-pinned invitation at execution.</p>
+          {definition.branches.flatMap((branch, branchIndex) => branch.actions.map((action, actionIndex) => action.type === "in-app" ? <div className="r3-studio__panel" key={`${branch.id}-${actionIndex}`}>
+            <label className="r3-studio__field">{definition.kind === "survey" ? "Published survey ID" : "Published referral program ID"}
+              <input value={action.templateId} onChange={(event) => updateAction(branchIndex, actionIndex, { ...action, templateId: event.currentTarget.value })} />
+            </label>
+            <label className="r3-studio__field">Effect contract version
+              <input type="number" min="1" value={action.templateVersion} onChange={(event) => updateAction(branchIndex, actionIndex, { ...action, templateVersion: Math.max(1, Number(event.currentTarget.value)) })} />
+            </label>
+            <label className="r3-studio__field">Placement
+              <input value={action.placementId} onChange={(event) => updateAction(branchIndex, actionIndex, { ...action, placementId: event.currentTarget.value })} />
+            </label>
+            <label className="r3-studio__field">Purpose
+              <select value={action.purpose} onChange={(event) => updateAction(branchIndex, actionIndex, { ...action, purpose: event.currentTarget.value as "transactional" | "promotional" })}>
+                <option value="transactional">Service / transactional</option><option value="promotional">Promotional</option>
+              </select>
+            </label>
+          </div> : null))}
+          {!definition.branches.some(branch => branch.actions.some(action => action.type === "in-app")) ? <p role="alert">A survey or referral rule needs at least one in-app action so the invitation has a customer presentation surface.</p> : null}
+        </div> : null}
 
         <h3>Human-readable rule</h3>
         <p className="r3-studio__status" aria-live="polite">{explanation}</p>
