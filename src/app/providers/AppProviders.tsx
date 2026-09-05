@@ -5,12 +5,14 @@ import { AuthProvider } from "../../features/identity/auth";
 import { PlatformProvider } from "../../context/PlatformContext";
 import { ExperienceRuntimeProvider } from "../../features/experience/runtime";
 import { createTrackAExperienceDefinitionSource, createTrackAExperienceOrganizationSource } from "../../features/experience/configuration";
+import { createReleaseExperienceDefinitionSource } from "../release/experienceDefinition";
+import { localDemoEnabled, releaseBackendReady } from "../release/readiness";
 import { releaseCustomerSource, releaseEntitlementSource, releaseOperationSource } from "../release/runtime";
 
 function ComposedExperience({ children }: { children: ReactNode }) {
   const configuration = useConfiguration();
   const organizationSource = useMemo(() => createTrackAExperienceOrganizationSource(() => configuration.publicOrganizationId), [configuration.publicOrganizationId]);
-  const definitionSource = useMemo(() => createTrackAExperienceDefinitionSource(configuration), [configuration.getPublishedExtension]);
+  const definitionSource = useMemo(() => createReleaseExperienceDefinitionSource(createTrackAExperienceDefinitionSource(configuration), !releaseBackendReady && !localDemoEnabled), [configuration.getPublishedExtension]);
   return <ExperienceRuntimeProvider organizationSource={organizationSource} definitionSource={definitionSource} customerSource={releaseCustomerSource} entitlementSource={releaseEntitlementSource} operationSource={releaseOperationSource}>
     <PlatformProvider>{children}</PlatformProvider>
   </ExperienceRuntimeProvider>;

@@ -7,6 +7,8 @@ const external = process.env.R1_SMOKE_BASE_URL;
 const base = external ?? 'http://127.0.0.1:4173';
 const server = external ? null : spawn(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--host', '127.0.0.1', '--port', '4173'], { stdio: 'ignore' });
 let browser;
+let page;
+const errors = [];
 const output = 'test-results/release-1';
 const results = [];
 try {
@@ -18,10 +20,11 @@ try {
   }
   assert.ok(started, 'The application must respond before browser verification.');
   browser = await chromium.launch();
-  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
-  const errors = [];
+  page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  page.setDefaultTimeout(15000);
   page.on('pageerror', (error) => errors.push(error.message));
   for (const route of ['/', '/offers', '/offers/primary', '/experience', '/experience/deep-dive', '/register', '/sign-in', '/app/experience', '/org/nurture-demo/admin/brand-site', '/platform']) {
+    console.log(`Checking ${route}`);
     await page.goto(`${base}${route}`, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => document.body.innerText.trim().length > 80);
     await page.waitForTimeout(200);
@@ -32,7 +35,8 @@ try {
   await page.locator('h1').waitFor();
   assert.equal(await page.locator('img[src="/brand/logo/nurture-n.svg"]').first().evaluate((img) => img.complete && img.naturalWidth > 0), true, 'Canonical N logo must load.');
   await page.screenshot({ path: `${output}/home-desktop.png`, fullPage: true });
-  await page.goto(`${base}/experience`);
+  console.log('Checking reference Experience completion');
+  await page.goto(`${base}/experience`, { waitUntil: 'domcontentloaded' });
   for (const choice of ['Very clear', 'Strong momentum', 'A focused prompt']) await page.getByRole('button', { name: choice, exact: true }).click();
   await page.getByRole('heading', { name: 'You have a clearer signal for what to do next.' }).waitFor();
   await page.screenshot({ path: `${output}/experience-complete.png`, fullPage: true });
@@ -61,6 +65,14 @@ try {
   assert.deepEqual(errors, [], 'The browser must not throw application errors.');
   await writeFile(`${output}/results.json`, JSON.stringify({ base, passed: true, routes: results, pageErrors: errors, tested: ['public completion', 'registration handoff', 'N logo', 'desktop/mobile reflow', 'demo-role forgery rejected', 'local configuration forgery ignored', 'unavailable account form disabled'], notTested: ['real authentication', 'Firestore rules', 'Stripe checkout/webhook', 'durable configuration publishing', 'real YouTube playback'] }, null, 2));
   console.log('Release 1 Hosting browser checks passed. Backend acceptance remains separate.');
+} catch (error) {
+  if (page) {
+    await page.screenshot({ path: `${output}/failure.png`, fullPage: true }).catch(() => {});
+    await writeFile(`${output}/failure.json`, JSON.stringify({ url: page.url(), error: String(error), pageErrors: errors, body: await page.locator('body').innerText().catch(() => 'unavailable'), results }, null, 2));
+    console.error('Browser failure at', page.url(), 'page errors:', errors);
+    console.error(await page.locator('body').innerText().catch(() => 'unavailable'));
+  }
+  throw error;
 } finally {
   await browser?.close();
   server?.kill('SIGTERM');
