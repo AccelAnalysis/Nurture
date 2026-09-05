@@ -71,7 +71,9 @@ const managerCapabilities: readonly OrganizationCapability[] = [
   "referrals.view",
   "referrals.manage",
   "analytics.view",
+  "team.view",
   // Legacy skeleton destinations map to the same Release 1 authority.
+  "members.view",
   "contacts.view",
   "contacts.manage",
   "sequences.manage",
@@ -88,14 +90,12 @@ const administratorCapabilities: readonly OrganizationCapability[] = [
   "customers.export",
   "billing.view",
   "billing.manage",
-  "team.view",
   "team.manage",
   "audit.view",
   "settings.view",
   "settings.manage",
   // Compatibility names retained for the current organization shell.
   "profile.manage",
-  "members.view",
   "members.manage",
   "roles.manage",
 ];
@@ -233,7 +233,7 @@ export const platformRoleCapabilityPresets = {
     "audit.view",
   ],
   "read-only": platformReadCapabilities,
-} as const satisfies Record<Exclude<PlatformRole, `custom:${string}`>, readonly PlatformCapability[]>;
+} as const satisfies Record<"super-administrator" | "administrator" | "support" | "read-only", readonly PlatformCapability[]>;
 
 export function isPlatformRole(value: unknown): value is PlatformRole {
   if (typeof value !== "string") return false;
@@ -249,9 +249,10 @@ export function isPlatformCapability(value: unknown): value is PlatformCapabilit
 }
 
 export function platformCapabilitiesForRole(role: PlatformRole | null): ReadonlySet<PlatformCapability> {
-  if (!role) return new Set();
-  if (role.startsWith("custom:")) return new Set();
-  return new Set(platformRoleCapabilityPresets[role]);
+  if (role === "super-administrator" || role === "administrator" || role === "support" || role === "read-only") {
+    return new Set(platformRoleCapabilityPresets[role]);
+  }
+  return new Set();
 }
 
 export const platformSectionCapability: Record<string, PlatformCapability> = {
