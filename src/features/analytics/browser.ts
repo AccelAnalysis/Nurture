@@ -1,6 +1,11 @@
-import { createLifecycleEventSubmission } from "./core.js";
+import {
+  createLifecycleEventSubmission,
+  isAnalyticsEventType,
+  validateEventPayload,
+} from "./core.js";
 import type {
   AnalyticsDataMode,
+  AnalyticsEventType,
   CreateSubmissionOptions,
   EventPayload,
   LifecycleEventSubmission,
@@ -71,7 +76,7 @@ export function setAnalyticsSubmissionSink(next: AnalyticsSubmissionSink): () =>
 }
 
 export function trackAnalyticsEvent(
-  eventType: NurtureEventType,
+  eventType: AnalyticsEventType,
   payload: EventPayload = {},
   options: CreateSubmissionOptions = {},
 ): LifecycleEventSubmission {
@@ -121,47 +126,130 @@ export function clearAnalyticsDebugBuffer(): void {
   }
 }
 
-interface LegacyPublicDetail extends Record<string, unknown> {
+function safePayload(value: unknown): EventPayload {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  try {
+    return validateEventPayload(value as EventPayload);
+  } catch {
+    return {};
+  }
+}
+
+interface PublicCompatibilityDetail extends Record<string, unknown> {
+  eventId?: string;
+  eventType?: string;
   name?: string;
+  occurredAt?: string;
   path?: string;
   destination?: string;
   organizationId?: string;
+  properties?: unknown;
 }
 
-const legacyMap: Record<string, { eventType: NurtureEventType; ctaKind?: string }> = {
+const publicCompatibilityMap: Record<string, { eventType: NurtureEventType; ctaKind?: string }> = {
   public_page_view: { eventType: "public.page_viewed" },
   public_primary_cta_selected: { eventType: "public.cta_selected", ctaKind: "primary" },
   public_offer_handoff: { eventType: "public.cta_selected", ctaKind: "offer_handoff" },
   public_trial_entry_handoff: { eventType: "public.cta_selected", ctaKind: "trial_entry_handoff" },
   public_identity_handoff: { eventType: "public.cta_selected", ctaKind: "identity_handoff" },
+  "public.page_viewed": { eventType: "public.page_viewed" },
+  "public.cta_selected": { eventType: "public.cta_selected", ctaKind: "primary" },
+  "public.offer_handoff": { eventType: "public.cta_selected", ctaKind: "offer_handoff" },
+  "public.trial_entry_handoff": { eventType: "public.cta_selected", ctaKind: "trial_entry_handoff" },
+  "public.identity_handoff": { eventType: "public.cta_selected", ctaKind: "identity_handoff" },
 };
 
 let publicBridgeInstalled = false;
+let experienceBridgeInstalled = false;
 let lastCta: { destination?: string; at: number } | null = null;
 
-export function installLegacyPublicAnalyticsBridge(): void {
+export function installPublicAnalyticsCompatibilityBridge(): void {
   if (publicBridgeInstalled || typeof window === "undefined") return;
   publicBridgeInstalled = true;
 
-  window.addEventListener("nurture:public-analytics", ((event: CustomEvent<LegacyPublicDetail>) => {
+  window.addEventListener("nurture:public-analytics", ((event: CustomEvent<PublicCompatibilityDetail>) => {
     const detail = event.detail ?? {};
-    const mapped = detail.name ? legacyMap[detail.name] : undefined;
+    const rawName = typeof detail.eventType === "string" ? detail.eventType : detail.name;
+    const mapped = rawName ? publicCompatibilityMap[rawName] : undefined;
     if (!mapped) return;
 
-    const destination = typeof detail.destination === "string" ? detail.destination : undefined;
+    const nested = safePayload(detail.properties);
+    const nestedDestination = typeof nested.destination === "string" ? nested.destination : undefined;
+    const destination = typeof detail.destination === "string" ? detail.destination : nestedDestination;
     if (mapped.eventType === "public.cta_selected") {
       const now = Date.now();
       if (lastCta && lastCta.destination === destination && now - lastCta.at < 100) return;
       lastCta = { destination, at: now };
     }
 
-    const payload: EventPayload = {};
+    const payload: EventPayload = { ...nested };
     if (typeof detail.path === "string") payload.path = detail.path;
     if (destination) payload.destination = destination;
     if (mapped.ctaKind) payload.ctaKind = mapped.ctaKind;
 
     trackAnalyticsEvent(mapped.eventType, payload, {
+      eventId: typeof detail.eventId === "string" ? detail.eventId : undefined,
+      occurredAt: typeof detail.occurredAt === "string" ? detail.occurredAt : undefined,
       organizationIdHint: typeof detail.organizationId === "string" ? detail.organizationId : undefined,
     });
   }) as EventListener);
 }
+
+interface ExperienceCompatibilityDetail extends Record<string, unknown> {
+  eventId?: string;
+  eventType?: string;
+  occurredAt?: string;
+  organizationId?: string;
+  identityId?: string;
+  customerId?: string;
+  experienceId?: string;
+  moduleId?: string;
+  moduleVersion?: string;
+  idempotencyKey?: string;
+  properties?: unknown;
+}
+
+/**
+ * Track B deliberately owns an injected Experience event sink. Until the tracks
+ * are composed directly, this bridge consumes its browser-observed event hook
+ * and converts it into the Track F submission contract without trusting its
+ * tenant/customer hints as authoritative.
+ */
+export function installExperienceAnalyticsCompatibilityBridge(): void {
+  if (experienceBridgeInstalled || typeof window === "undefined") return;
+  experienceBridgeInstalled = true;
+
+  window.addEventListener("nurture:experience-event", ((event: CustomEvent<ExperienceCompatibilityDetail>) => {
+    const detail = event.detail ?? {};
+    if (!isAnalyticsEventType(detail.eventType)) return;
+
+    const customerIdHint = typeof detail.customerId === "string" ? detail.customerId : undefined;
+    const identityIdHint = typeof detail.identityId === "string" ? detail.identityId : undefined;
+    const subjectHint = customerIdHint
+      ? { kind: "customer" as const, id: customerIdHint }
+      : identityIdHint
+        ? { kind: "identity" as const, id: identityIdHint }
+        : undefined;
+
+    trackAnalyticsEvent(detail.eventType, safePayload(detail.properties), {
+      eventId: typeof detail.eventId === "string" ? detail.eventId : undefined,
+      occurredAt: typeof detail.occurredAt === "string" ? detail.occurredAt : undefined,
+      idempotencyKey: typeof detail.idempotencyKey === "string" ? detail.idempotencyKey : undefined,
+      organizationIdHint: typeof detail.organizationId === "string" ? detail.organizationId : undefined,
+      identityIdHint,
+      customerIdHint,
+      subjectHint,
+      experienceId: typeof detail.experienceId === "string" ? detail.experienceId : undefined,
+      experienceModuleId: typeof detail.moduleId === "string" ? detail.moduleId : undefined,
+      experienceModuleVersion: typeof detail.moduleVersion === "string" ? detail.moduleVersion : undefined,
+    });
+  }) as EventListener);
+}
+
+export function installAnalyticsCompatibilityBridges(): void {
+  installPublicAnalyticsCompatibilityBridge();
+  installExperienceAnalyticsCompatibilityBridge();
+}
+
+/** @deprecated Use installPublicAnalyticsCompatibilityBridge. */
+export const installLegacyPublicAnalyticsBridge = installPublicAnalyticsCompatibilityBridge;
