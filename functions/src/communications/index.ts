@@ -21,3 +21,15 @@ export {
   type CurrentCommunicationContext,
   type CurrentCommunicationContextPort,
 } from "./acquisition-dispatch.js";
+export {
+  listPendingCommunicationEventOutbox,
+  markCommunicationEventOutboxAppended,
+  markCommunicationEventOutboxFailed,
+} from "./store.js";
+export {
+  communicationEventTypeForStatus,
+  createCommunicationEventOutboxRecord,
+  type CommunicationEventOutboxRecord,
+  type CommunicationLifecycleEventSource,
+  type CommunicationLifecycleEventType,
+} from "./outbox.js";
