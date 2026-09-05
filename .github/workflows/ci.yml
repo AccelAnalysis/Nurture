@@ -34,6 +34,9 @@ jobs:
       - name: Experience contract
         run: npm run test:experience
 
+      - name: Experience ecosystem
+        run: npm run test:ecosystem
+
       - name: Analytics contract
         run: npx tsc -p tsconfig.analytics.json && node scripts/verify-analytics-contract.mjs
 
