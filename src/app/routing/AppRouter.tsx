@@ -3,6 +3,7 @@ import { OrganizationShell, ParticipantShell, PlatformAdminShell, PublicShell } 
 import { EmptyState, LoadingState } from "../../components/ui";
 import { useOrganization } from "../../context/OrganizationContext";
 import { usePlatform } from "../../context/PlatformContext";
+import { BrandSiteAdminPage } from "../../features/configuration/BrandSiteAdminPage";
 import { AuthenticatedRoute, IdentityRouteBoundary, isIdentityRoute } from "../../features/identity/IdentityBoundary";
 import { useAuth } from "../../features/identity/auth";
 import { OnboardingRouteBoundary } from "../../features/onboarding/OnboardingBoundary";
@@ -105,13 +106,21 @@ export function AppRouter() {
     }
 
     const section = fourth || "overview";
+    if (["brand", "site", "configuration"].includes(section)) {
+      return <Redirect to={`/org/${organizationId}/admin/brand-site`} />;
+    }
+
     const detail = fifth;
-    const capability = organizationSectionCapability[section] ?? "workspace.view";
-    const content = section === "contacts" && detail === "new"
-      ? <AddContact organizationId={organizationId} />
-      : section === "contacts" && detail
-        ? <ContactDetail organizationId={organizationId} contactId={detail} />
-        : <OrganizationPage organizationId={organizationId} section={section} />;
+    const capability = section === "brand-site"
+      ? "settings.manage"
+      : organizationSectionCapability[section] ?? "workspace.view";
+    const content = section === "brand-site"
+      ? <BrandSiteAdminPage organizationId={organizationId} />
+      : section === "contacts" && detail === "new"
+        ? <AddContact organizationId={organizationId} />
+        : section === "contacts" && detail
+          ? <ContactDetail organizationId={organizationId} contactId={detail} />
+          : <OrganizationPage organizationId={organizationId} section={section} />;
     const effectiveCapability = section === "contacts" && detail === "new" ? "contacts.manage" : capability;
 
     return (
