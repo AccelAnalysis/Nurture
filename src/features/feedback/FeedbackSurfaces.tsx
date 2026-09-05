@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { ErrorState, LoadingState } from "../../components/ui";
-import { functions } from "../../firebase";
+import { firebaseAppCheckConfigured, functions } from "../../firebase";
 import { createFeedbackClient, feedbackFragment } from "./client";
 import { FeedbackAdminPage } from "./FeedbackAdminPage";
 import { ReferralCenter, SurveyPage } from "./ParticipantFeedback";
 import type { ConfigurationKind } from "../../../shared/feedback/api";
+
+const release4BackendReady = import.meta.env.VITE_RELEASE4_BACKEND_READY === "true" && firebaseAppCheckConfigured;
 
 function applicationKey(organizationId: string) {
   return `org:${organizationId}`;
@@ -15,17 +17,20 @@ function proofKey(organizationId: string) {
 function storage(): Storage | null {
   try { return typeof window === "undefined" ? null : window.localStorage; } catch { return null; }
 }
+function feedbackApi(organizationId: string) {
+  return release4BackendReady && functions ? createFeedbackClient(functions, applicationKey(organizationId)) : null;
+}
 
 export function PublicSurveySurface({ organizationId }: { organizationId: string }) {
-  const api = useMemo(() => functions ? createFeedbackClient(functions, applicationKey(organizationId)) : null, [organizationId]);
+  const api = useMemo(() => feedbackApi(organizationId), [organizationId]);
   const token = typeof window === "undefined" ? null : feedbackFragment(window.location.hash, "invitation");
-  if (!api) return <ErrorState message="Feedback is unavailable because the application backend is not configured." />;
+  if (!api) return <ErrorState message="Feedback is not activated for this production build yet." />;
   return <div className="content-width page-section"><SurveyPage api={api} token={token} /></div>;
 }
 
 /** Capture only an opaque referral receipt. A forged/tampered value has no authority and fails server validation. */
 export function PublicReferralCapture({ organizationId }: { organizationId: string }) {
-  const api = useMemo(() => functions ? createFeedbackClient(functions, applicationKey(organizationId)) : null, [organizationId]);
+  const api = useMemo(() => feedbackApi(organizationId), [organizationId]);
   const [state, setState] = useState<"idle" | "capturing" | "captured" | "unavailable">("idle");
   useEffect(() => {
     if (!api || typeof window === "undefined") return;
@@ -49,7 +54,7 @@ export function PublicReferralCapture({ organizationId }: { organizationId: stri
 
 /** Bind the opaque public receipt only after the existing identity/customer boundary can resolve the authenticated customer. */
 export function PendingReferralBinding({ organizationId }: { organizationId: string }) {
-  const api = useMemo(() => functions ? createFeedbackClient(functions, applicationKey(organizationId)) : null, [organizationId]);
+  const api = useMemo(() => feedbackApi(organizationId), [organizationId]);
   useEffect(() => {
     if (!api) return;
     const store = storage(); const proof = store?.getItem(proofKey(organizationId)); if (!proof) return;
@@ -64,14 +69,14 @@ export function PendingReferralBinding({ organizationId }: { organizationId: str
 }
 
 export function ParticipantReferralSurface({ organizationId }: { organizationId: string }) {
-  const api = useMemo(() => functions ? createFeedbackClient(functions, applicationKey(organizationId)) : null, [organizationId]);
-  if (!api) return <ErrorState message="Referrals are unavailable because the application backend is not configured." />;
+  const api = useMemo(() => feedbackApi(organizationId), [organizationId]);
+  if (!api) return <ErrorState message="Referrals are not activated for this production build yet." />;
   return <ReferralCenter api={api} programId="primary-referral-program" publicOrigin={window.location.origin} />;
 }
 
 export function OrganizationFeedbackAdminSurface({ organizationId, kind }: { organizationId: string; kind: ConfigurationKind }) {
-  const api = useMemo(() => functions ? createFeedbackClient(functions, applicationKey(organizationId)) : null, [organizationId]);
-  if (!api) return <ErrorState message="Feedback administration is unavailable because the application backend is not configured." />;
+  const api = useMemo(() => feedbackApi(organizationId), [organizationId]);
+  if (!api) return <ErrorState message="Feedback administration is not activated for this production build yet." />;
   return <FeedbackAdminPage api={api} initialKind={kind} />;
 }
 
