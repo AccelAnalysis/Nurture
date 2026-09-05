@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   calculateAnnualPricing,
+  currencyMinorUnitExponent,
   describeAnnualComparison,
+  formatMinorAmount,
 } from "../../../shared/billing/pricing.js";
 import type { OfferPrice } from "../../../shared/billing/contracts.js";
 
@@ -41,6 +43,14 @@ test("annual pricing at or above twelve monthly charges does not advertise savin
   assert.equal(result.advertisesSavings, false);
   assert.match(describeAnnualComparison(price("month", 1000), price("year", 12000)) ?? "", /billed annually/i);
   assert.doesNotMatch(describeAnnualComparison(price("month", 1000), price("year", 12000)) ?? "", /save/i);
+});
+
+test("currency display respects ISO minor-unit exponents", () => {
+  assert.equal(currencyMinorUnitExponent("jpy", "en-US"), 0);
+  assert.equal(currencyMinorUnitExponent("usd", "en-US"), 2);
+  assert.equal(currencyMinorUnitExponent("kwd", "en-US"), 3);
+  assert.match(formatMinorAmount(100, "jpy", "en-US"), /100/);
+  assert.match(formatMinorAmount(1234, "kwd", "en-US"), /1\.234/);
 });
 
 test("minor-unit validation rejects fractional or negative amounts", () => {
