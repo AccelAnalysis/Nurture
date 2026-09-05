@@ -2,8 +2,10 @@ import {
   ANALYTICS_SCHEMA_VERSION,
   EVENT_CATALOG,
   MAX_EVENT_PAYLOAD_BYTES,
+  type AnalyticsEventType,
   type CreateSubmissionOptions,
   type EventPayload,
+  type ExperienceModuleEventType,
   type JsonValue,
   type LifecycleEventEnvelope,
   type LifecycleEventSource,
@@ -13,6 +15,8 @@ import {
 } from "./contracts.js";
 
 const SECRET_KEY_PATTERN = /(^|_)(password|passcode|secret|token|authorization|cookie|card_?number|cvc|cvv|ssn|social_?security)($|_)/i;
+const MODULE_EVENT_PATTERN = /^experience\.[a-z0-9][a-z0-9-]*(?:\.[a-z0-9][a-z0-9_-]*)+$/;
+const MODULE_EVENT_SOURCES: readonly LifecycleEventSource[] = ["browser", "domain_action", "trusted_server"];
 
 export class AnalyticsContractError extends Error {
   constructor(message: string) {
@@ -66,16 +70,31 @@ export function isNurtureEventType(value: unknown): value is NurtureEventType {
   return typeof value === "string" && Object.prototype.hasOwnProperty.call(EVENT_CATALOG, value);
 }
 
-export function isSourceAllowedForEvent(eventType: NurtureEventType, source: LifecycleEventSource): boolean {
-  return (EVENT_CATALOG[eventType].allowedSources as readonly LifecycleEventSource[]).includes(source);
+export function isExperienceModuleEventType(value: unknown): value is ExperienceModuleEventType {
+  return typeof value === "string" && !isNurtureEventType(value) && MODULE_EVENT_PATTERN.test(value);
+}
+
+export function isAnalyticsEventType(value: unknown): value is AnalyticsEventType {
+  return isNurtureEventType(value) || isExperienceModuleEventType(value);
+}
+
+export function isSourceAllowedForEvent(eventType: AnalyticsEventType, source: LifecycleEventSource): boolean {
+  if (isNurtureEventType(eventType)) {
+    return (EVENT_CATALOG[eventType].allowedSources as readonly LifecycleEventSource[]).includes(source);
+  }
+  return isExperienceModuleEventType(eventType) && MODULE_EVENT_SOURCES.includes(source);
 }
 
 export function createLifecycleEventSubmission(
-  eventType: NurtureEventType,
+  eventType: AnalyticsEventType,
   payload: EventPayload = {},
   options: CreateSubmissionOptions = {},
   factories: { id?: () => string; now?: () => string } = {},
 ): LifecycleEventSubmission {
+  if (!isAnalyticsEventType(eventType)) {
+    throw new AnalyticsContractError(`Unknown or invalid event type: ${String(eventType)}.`);
+  }
+
   const id = options.eventId ?? factories.id?.() ?? globalThis.crypto?.randomUUID?.();
   const occurredAt = options.occurredAt ?? factories.now?.() ?? new Date().toISOString();
   const eventId = requireNonEmpty("eventId", id);
@@ -85,9 +104,7 @@ export function createLifecycleEventSubmission(
   const correlationId = requireNonEmpty("correlationId", options.correlationId ?? options.sessionId ?? eventId);
   const idempotencyKey = requireNonEmpty("idempotencyKey", options.idempotencyKey ?? eventId);
 
-  if (options.subjectHint) {
-    requireNonEmpty("subjectHint.id", options.subjectHint.id);
-  }
+  if (options.subjectHint) requireNonEmpty("subjectHint.id", options.subjectHint.id);
 
   return {
     eventId,
@@ -99,8 +116,11 @@ export function createLifecycleEventSubmission(
     idempotencyKey,
     dataMode: options.dataMode ?? "live",
     organizationIdHint: options.organizationIdHint,
+    identityIdHint: options.identityIdHint,
+    customerIdHint: options.customerIdHint,
     subjectHint: options.subjectHint,
     experienceId: options.experienceId,
+    experienceModuleId: options.experienceModuleId,
     experienceModuleVersion: options.experienceModuleVersion,
     offerId: options.offerId,
     payload,
@@ -113,8 +133,8 @@ export function bindLifecycleEvent(
   factories: { now?: () => string } = {},
 ): LifecycleEventEnvelope {
   const organizationId = requireNonEmpty("organizationId", binding.organizationId);
-  if (!isNurtureEventType(submission.eventType)) {
-    throw new AnalyticsContractError(`Unknown event type: ${String(submission.eventType)}.`);
+  if (!isAnalyticsEventType(submission.eventType)) {
+    throw new AnalyticsContractError(`Unknown or invalid event type: ${String(submission.eventType)}.`);
   }
   if (submission.schemaVersion !== ANALYTICS_SCHEMA_VERSION) {
     throw new AnalyticsContractError(`Unsupported schema version: ${String(submission.schemaVersion)}.`);
@@ -140,6 +160,7 @@ export function bindLifecycleEvent(
     identityId: binding.identityId,
     customerId: binding.customerId,
     experienceId: binding.experienceId ?? submission.experienceId,
+    experienceModuleId: binding.experienceModuleId ?? submission.experienceModuleId,
     experienceModuleVersion: binding.experienceModuleVersion ?? submission.experienceModuleVersion,
     offerId: binding.offerId ?? submission.offerId,
     sessionId: submission.sessionId,
