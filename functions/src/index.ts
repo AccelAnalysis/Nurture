@@ -69,10 +69,10 @@ export {
   r3ExecuteRecoveryCommand,
   r3GetCustomerLifecycleControl,
   r3SetCustomerLifecyclePreferences,
-  r3RequestCancellation,
   r3GetInAppTreatment,
   r3RecordInAppTreatmentInteraction,
 } from "./lifecycle/release3-admin.js";
+export { r3RequestCancellation } from "./lifecycle/release3-cancellation.js";
 export {
   r3ProjectLifecycleEvent,
   r3DrainLifecycleRuns,
