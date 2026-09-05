@@ -84,6 +84,18 @@ Provider SDKs remain behind these ports. Stripe, SendGrid, Twilio, Firebase Stor
 
 Important repeated operations carry a correlation ID and optional idempotency key. Errors distinguish retryable vs non-retryable failures and expose only safe details.
 
+### Regression coverage
+
+Vitest contract tests protect the horizontal boundaries that other tracks consume:
+
+- manager vs administrator organization capabilities
+- membership revocation behavior
+- known, missing, malformed, and custom platform claims
+- unknown-capability rejection for custom platform roles
+- audit secret/payment-field redaction and bounded context
+
+CI now runs typecheck, tests, and build for pull requests and main-branch pushes.
+
 ## Cross-track handoff
 
 | Track | Track E contract to consume | Track E does not own |
@@ -91,10 +103,28 @@ Important repeated operations carry a correlation ID and optional idempotency ke
 | A — Configuration + Public Shell | `brand.*` capabilities; organization scope; `AuditWriteRequest`; media port | Brand/site configuration and publish implementation |
 | B — Experience Architecture | `experience.*` capabilities; organization scope; provider ports where needed | Experience/module/entitlement behavior |
 | C — Identity + Onboarding | `onboarding.*` capabilities where admin configuration is exposed; platform-claim contract remains separate from identity | Registration, profile bootstrap, onboarding flow |
-| D — Offers + Billing | `offers.*`, `billing.*`; payment port; audit/idempotency conventions | Stripe adapter, checkout, subscription state |
+| D — Offers + Billing | `offers.*`, `billing.*`; payment port; audit/idempotency conventions | Commercial domain DTOs, Stripe adapter, checkout, subscription state |
 | F — Analytics Instrumentation | generic `EventIntegrationPort<TEvent>` | Event envelope and event vocabulary |
 
 Tracks should import these contracts rather than copy them. If a missing capability or provider operation is discovered, extend the Track E contract rather than introduce a parallel authorization or integration model.
+
+### Current Track D coordination note
+
+Track D already owns commercial client/domain DTOs such as `CommercialOffer`, `CheckoutSessionRequest`, and `SubscriptionSnapshot`. Track E does not replace or duplicate that domain model.
+
+The intended layering is:
+
+```text
+Track D browser DTO / Firebase callable
+        ↓
+Track D trusted billing service resolves identity, customer, Offer/price mapping
+        ↓
+Track E PaymentIntegrationPort contract
+        ↓
+Stripe adapter (Track D implementation)
+```
+
+The trusted billing service should also use Track E's audit/idempotency conventions for material offer/subscription operations. The browser success return remains non-authoritative.
 
 ## Firebase Security Rules gate
 
@@ -130,11 +160,14 @@ Until the first privileged Cloud Function is introduced, this branch deliberatel
 
 ## Release 1 Track E acceptance status
 
-- **Organization capability model:** implemented at application-contract level.
+- **Organization capability model:** implemented at application-contract level and regression-tested.
 - **Platform route/security boundary:** implemented; real-user platform UI authority resolves from server-issued Firebase claims.
 - **Client demo privilege separation:** implemented.
-- **Canonical audit contract/redaction:** implemented.
+- **Platform claim parsing:** fail-closed and regression-tested.
+- **Canonical audit contract/redaction:** implemented and regression-tested.
 - **Typed provider abstraction:** implemented.
+- **Cross-track handoffs:** documented; Track D billing layering explicitly reconciled.
+- **CI contract gate:** typecheck + tests + build configured.
 - **Cross-tenant Firestore rules + emulator evidence:** blocked on required Firestore edition verification; still a release gate.
 - **Durable audit persistence:** to be attached to the first trusted mutation/Cloud Function; still a release gate.
 - **Provider-specific implementations:** owned by the corresponding feature track behind Track E ports.
