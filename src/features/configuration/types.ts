@@ -3,6 +3,34 @@ export const CONFIGURATION_SCHEMA_VERSION = 1 as const;
 export type AppearanceMode = "system" | "light" | "dark";
 export type HeroMediaKind = "none" | "image" | "youtube" | "vimeo" | "video";
 
+export type ConfigurationJsonPrimitive = string | number | boolean | null;
+export type ConfigurationJsonValue = ConfigurationJsonPrimitive | ConfigurationJsonValue[] | ConfigurationJsonObject;
+export interface ConfigurationJsonObject {
+  [key: string]: ConfigurationJsonValue;
+}
+
+/**
+ * Opaque versioned configuration owned by another feature track. Track A stores,
+ * previews/publishes, and returns these records without interpreting `payload`.
+ * The owning track validates its own schema before rendering or executing it.
+ */
+export interface ConfigurationExtension {
+  namespace: string;
+  schemaVersion: string;
+  payload: ConfigurationJsonObject;
+}
+
+export type ConfigurationExtensionMap = Record<string, ConfigurationExtension>;
+
+export interface PublishedConfigurationExtension {
+  organizationId: string;
+  extensionKey: string;
+  extension: ConfigurationExtension;
+  configurationVersionId: string;
+  configurationVersion: number;
+  publishedAt: string;
+}
+
 export interface MediaAsset {
   kind: HeroMediaKind;
   url: string;
@@ -70,6 +98,8 @@ export interface OrganizationConfiguration {
   brand: BrandConfiguration;
   site: SiteConfiguration;
   metadata: PublicMetadataConfiguration;
+  /** Opaque cross-track configuration carried through the same draft/publish version. */
+  extensions: ConfigurationExtensionMap;
 }
 
 export interface BrandConfigurationOverride {
@@ -109,6 +139,8 @@ export interface OrganizationConfigurationOverride {
   brand?: BrandConfigurationOverride;
   site?: SiteConfigurationOverride;
   metadata?: PublicMetadataConfigurationOverride;
+  /** Extensions have no Track A defaults; the current map is stored opaquely. */
+  extensions?: ConfigurationExtensionMap;
 }
 
 export interface ConfigurationVersion {
