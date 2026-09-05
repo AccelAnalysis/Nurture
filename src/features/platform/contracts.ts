@@ -6,12 +6,4 @@ export interface PlatformScopeContext {
   authorizationSource: "custom-claims" | "trusted-backend" | "demo";
 }
 
-export interface PlatformAuditEvent {
-  id: string;
-  actorUserId: string;
-  action: string;
-  targetType: string;
-  targetId?: string;
-  occurredAt: string;
-  context?: Record<string, string | number | boolean | null>;
-}
+export type { AuditRecord as PlatformAuditEvent } from "../../platform/audit";
