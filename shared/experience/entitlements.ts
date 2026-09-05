@@ -71,7 +71,8 @@ export type CommercialEntitlementProjection =
         | "offer-not-published"
         | "scope-mismatch"
         | "offer-mismatch"
-        | "invalid-trusted-time";
+        | "invalid-trusted-time"
+        | "trial-expiration-unavailable";
       explanation: string;
     };
 
@@ -126,9 +127,23 @@ export function projectCommercialEntitlements(input: {
     };
   }
 
-  const expiresAt = subscription.status === "trialing"
-    ? (validTimestamp(subscription.trialEnd) ? subscription.trialEnd : subscription.currentPeriodEnd)
-    : subscription.currentPeriodEnd;
+  let expiresAt: string | undefined;
+  if (subscription.status === "trialing") {
+    expiresAt = validTimestamp(subscription.trialEnd)
+      ? subscription.trialEnd
+      : validTimestamp(subscription.currentPeriodEnd)
+        ? subscription.currentPeriodEnd
+        : undefined;
+    if (!expiresAt) {
+      return {
+        ok: false,
+        reason: "trial-expiration-unavailable",
+        explanation: "A trialing subscription must include a valid trusted trial or current-period end before it can grant Experience access.",
+      };
+    }
+  } else if (validTimestamp(subscription.currentPeriodEnd)) {
+    expiresAt = subscription.currentPeriodEnd;
+  }
 
   const entitlements = offer.capabilityKeys.flatMap((capabilityKey) => {
     const capability = catalog.get(capabilityKey);
@@ -144,7 +159,7 @@ export function projectCommercialEntitlements(input: {
       kind,
       source: "subscription" as const,
       verifiedAt: subscription.trustedAt,
-      ...(validTimestamp(expiresAt) ? { expiresAt } : {}),
+      ...(expiresAt ? { expiresAt } : {}),
       ...(kind === "allowance" && typeof capability.remaining === "number" ? { remaining: capability.remaining } : {}),
       ...(kind === "allowance" && validTimestamp(capability.resetAt) ? { resetAt: capability.resetAt } : {}),
     }];
