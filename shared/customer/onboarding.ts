@@ -59,6 +59,16 @@ function allRequiredComplete(definition: OnboardingFlowDefinitionV2, progress: O
   return definition.steps.filter((step) => step.required).every((step) => progress.steps[step.id] === "complete");
 }
 
+function setStepStatus(
+  steps: Record<string, OnboardingStepProgressStatus>,
+  stepId: string,
+  status: OnboardingStepProgressStatus,
+): Record<string, OnboardingStepProgressStatus> {
+  const next: Record<string, OnboardingStepProgressStatus> = { ...steps };
+  next[stepId] = status;
+  return next;
+}
+
 function withoutAbandonment(progress: OnboardingProgressV2): OnboardingProgressV2 {
   const { abandonedAt: _abandonedAt, ...rest } = progress;
   return rest;
@@ -145,21 +155,22 @@ export function completeOnboardingStep(
     experienceEvidence[step.experienceRequirement.requirementId] = input.experienceEvidenceId.trim();
   }
 
-  let progress = withoutAbandonment({
+  const advanced: OnboardingProgressV2 = {
     ...current,
     status: "in-progress",
-    steps: { ...current.steps, [step.id]: "complete" },
+    steps: setStepStatus(current.steps, step.id, "complete"),
     answers: { ...current.answers, ...input.answers },
     acceptedAgreementVersions,
     experienceEvidence,
     lastActivityAt: now,
-  });
+  };
+  let progress: OnboardingProgressV2 = withoutAbandonment(advanced);
 
   const next = firstIncompleteStep(definition, progress);
   if (next) {
     progress = {
       ...progress,
-      steps: { ...progress.steps, [next.id]: "current" },
+      steps: setStepStatus(progress.steps, next.id, "current"),
       currentStepId: next.id,
     };
   } else if (allRequiredComplete(definition, progress)) {
@@ -175,7 +186,8 @@ export function completeOnboardingStep(
 
 export function resumeOnboardingProgress(current: OnboardingProgressV2, now: string): OnboardingProgressV2 {
   if (current.status !== "abandoned") return current;
-  return withoutAbandonment({ ...current, status: "in-progress", lastActivityAt: now });
+  const resumed: OnboardingProgressV2 = { ...current, status: "in-progress", lastActivityAt: now };
+  return withoutAbandonment(resumed);
 }
 
 export function inferOnboardingAbandonment(current: OnboardingProgressV2, now: string, inactivityMs: number): OnboardingProgressV2 {
@@ -195,7 +207,7 @@ export function migrateLegacyIdentityOnboarding(
   definition: OnboardingFlowDefinitionV2,
   now: string,
 ): OnboardingProgressV2 {
-  let progress = createOnboardingProgress(scope, definition, legacy.startedAt ?? now);
+  let progress: OnboardingProgressV2 = createOnboardingProgress(scope, definition, legacy.startedAt ?? now);
   progress = {
     ...progress,
     answers: { ...legacy.answers },
@@ -209,7 +221,7 @@ export function migrateLegacyIdentityOnboarding(
     },
   };
 
-  const steps = { ...progress.steps };
+  let steps: Record<string, OnboardingStepProgressStatus> = { ...progress.steps };
   const acceptedAgreementVersions = { ...progress.acceptedAgreementVersions };
   for (const step of definition.steps) {
     if (legacy.steps[step.id] !== "complete") continue;
@@ -218,10 +230,10 @@ export function migrateLegacyIdentityOnboarding(
       if (!evidence || evidence.version !== step.agreement.version) continue;
       acceptedAgreementVersions[step.agreement.id] = evidence.version;
     }
-    steps[step.id] = "complete";
+    steps = setStepStatus(steps, step.id, "complete");
   }
   for (const step of definition.steps) {
-    if (steps[step.id] === "current") steps[step.id] = "not-started";
+    if (steps[step.id] === "current") steps = setStepStatus(steps, step.id, "not-started");
   }
   progress = { ...progress, steps, acceptedAgreementVersions };
 
@@ -230,7 +242,7 @@ export function migrateLegacyIdentityOnboarding(
     progress = {
       ...progress,
       status: "in-progress",
-      steps: { ...progress.steps, [next.id]: "current" },
+      steps: setStepStatus(progress.steps, next.id, "current"),
       currentStepId: next.id,
     };
   } else if (allRequiredComplete(definition, progress)) {
