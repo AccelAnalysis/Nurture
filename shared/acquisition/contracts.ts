@@ -126,6 +126,7 @@ export type AcquisitionReasonCode =
   | "platform-paused"
   | "organization-paused"
   | "automation-paused"
+  | "organization-missing"
   | "subject-missing"
   | "subject-deleted"
   | "state-unknown"
@@ -203,6 +204,13 @@ export interface AcquisitionJob {
   status: AcquisitionJobStatus;
   providerAttemptCount: number;
   lease?: AcquisitionJobLease;
+  /**
+   * Persisted immediately before crossing the provider submission boundary.
+   * If a worker dies after this marker, recovery must classify the stale job as
+   * unknown-outcome rather than re-leasing it for a blind duplicate send.
+   */
+  providerSubmissionStartedAt?: string;
+  providerSubmissionAttemptId?: string;
   providerMessageId?: string;
   providerRequestId?: string;
   lastExplanation: AcquisitionExplanation;
@@ -350,7 +358,15 @@ export interface LeaseJobInput {
 
 export type LeaseJobResult =
   | { status: "leased"; job: AcquisitionJob }
+  | { status: "unknown-outcome"; job: AcquisitionJob }
   | { status: "unavailable"; reason: "terminal" | "not-due" | "active-lease" | "missing" };
+
+export interface MarkProviderSubmissionStartedInput {
+  jobId: string;
+  leaseToken: string;
+  at: string;
+  attemptId: string;
+}
 
 export interface TransitionLeasedJobInput {
   jobId: string;
@@ -374,7 +390,14 @@ export interface AcquisitionRuntimeStore {
     limit: number;
     dataMode?: AnalyticsDataMode;
   }): Promise<readonly AcquisitionJob[]>;
+  /**
+   * Atomically acquires due work. If an expired lease already crossed the
+   * provider-submission marker, implementations must atomically convert it to
+   * unknown-outcome and return that status instead of granting another lease.
+   */
   tryLeaseJob(input: LeaseJobInput): Promise<LeaseJobResult>;
+  /** Durable ambiguity barrier written before calling the external provider. */
+  markProviderSubmissionStarted(input: MarkProviderSubmissionStartedInput): Promise<AcquisitionJob>;
   transitionLeasedJob(input: TransitionLeasedJobInput): Promise<AcquisitionJob>;
   getPauseState(input: {
     organizationId: string;
