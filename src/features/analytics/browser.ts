@@ -161,6 +161,7 @@ const publicCompatibilityMap: Record<string, { eventType: NurtureEventType; ctaK
 
 let publicBridgeInstalled = false;
 let experienceBridgeInstalled = false;
+let identityBridgeInstalled = false;
 let lastCta: { destination?: string; at: number } | null = null;
 
 export function installPublicAnalyticsCompatibilityBridge(): void {
@@ -246,9 +247,72 @@ export function installExperienceAnalyticsCompatibilityBridge(): void {
   }) as EventListener);
 }
 
+interface IdentityLifecycleCompatibilityDetail extends Record<string, unknown> {
+  eventId?: string;
+  eventType?: string;
+  schemaVersion?: number;
+  occurredAt?: string;
+  correlationId?: string;
+  idempotencyKey?: string;
+  identityIdHint?: string;
+  customerIdHint?: string;
+  leadIdHint?: string;
+  payload?: unknown;
+}
+
+const IDENTITY_LIFECYCLE_TYPES = new Set<NurtureEventType>([
+  "lead.created",
+  "registration.started",
+  "registration.completed",
+  "identity.verified",
+  "onboarding.started",
+  "onboarding.step_completed",
+  "onboarding.completed",
+]);
+
+/**
+ * Track C emits client-observed lifecycle signals after its owning action
+ * succeeds. This bridge preserves its IDs/hints while keeping source/tenant
+ * authority out of the browser contract; Track E must verify and bind those at
+ * trusted ingestion before persistence.
+ */
+export function installIdentityLifecycleCompatibilityBridge(): void {
+  if (identityBridgeInstalled || typeof window === "undefined") return;
+  identityBridgeInstalled = true;
+
+  window.addEventListener("nurture:lifecycle-signal", ((event: CustomEvent<IdentityLifecycleCompatibilityDetail>) => {
+    const detail = event.detail ?? {};
+    if (detail.schemaVersion !== 1 || typeof detail.eventType !== "string") return;
+    if (!IDENTITY_LIFECYCLE_TYPES.has(detail.eventType as NurtureEventType)) return;
+
+    const eventType = detail.eventType as NurtureEventType;
+    const identityIdHint = typeof detail.identityIdHint === "string" ? detail.identityIdHint : undefined;
+    const customerIdHint = typeof detail.customerIdHint === "string" ? detail.customerIdHint : undefined;
+    const leadIdHint = typeof detail.leadIdHint === "string" ? detail.leadIdHint : undefined;
+    const subjectHint = customerIdHint
+      ? { kind: "customer" as const, id: customerIdHint }
+      : identityIdHint
+        ? { kind: "identity" as const, id: identityIdHint }
+        : leadIdHint
+          ? { kind: "lead" as const, id: leadIdHint }
+          : undefined;
+
+    trackAnalyticsEvent(eventType, safePayload(detail.payload), {
+      eventId: typeof detail.eventId === "string" ? detail.eventId : undefined,
+      occurredAt: typeof detail.occurredAt === "string" ? detail.occurredAt : undefined,
+      correlationId: typeof detail.correlationId === "string" ? detail.correlationId : undefined,
+      idempotencyKey: typeof detail.idempotencyKey === "string" ? detail.idempotencyKey : undefined,
+      identityIdHint,
+      customerIdHint,
+      subjectHint,
+    });
+  }) as EventListener);
+}
+
 export function installAnalyticsCompatibilityBridges(): void {
   installPublicAnalyticsCompatibilityBridge();
   installExperienceAnalyticsCompatibilityBridge();
+  installIdentityLifecycleCompatibilityBridge();
 }
 
 /** @deprecated Use installPublicAnalyticsCompatibilityBridge. */
