@@ -1,7 +1,13 @@
+import type {
+  AcquisitionEmailDispatchPort,
+  AcquisitionEmailEligibilityInput,
+  AcquisitionEmailEligibilityResult,
+  AcquisitionEmailSubmitInput,
+  AcquisitionEmailSubmitResult,
+} from "../../../shared/acquisition/contracts.js";
 import type { EmailIntegrationPort } from "../../../shared/platform/integrations.js";
 import {
   communicationTemplateIds,
-  type CommunicationExecutionMode,
   type CommunicationPurpose,
   type CommunicationTemplateId,
   type CommunicationVariableValues,
@@ -22,57 +28,6 @@ import {
 } from "./store.js";
 
 const approvedTemplateIds = new Set<string>(communicationTemplateIds);
-
-/** Track E's bounded acquisition purpose vocabulary. */
-export type AcquisitionCommunicationPurpose = "service" | "promotional";
-
-/**
- * Structurally matches Track E's AcquisitionEmailEligibilityInput without
- * importing E-owned files into this independently mergeable Track D branch.
- */
-export interface AcquisitionCommunicationInput {
-  organizationId: string;
-  subjectKind: "lead" | "customer";
-  subjectId: string;
-  customerId?: string;
-  leadId?: string;
-  automationId: string;
-  automationVersionId: string;
-  dataMode: CommunicationExecutionMode;
-  effectId: string;
-  stepId: string;
-  templateId: string;
-  templateVersionId: string;
-  purpose: AcquisitionCommunicationPurpose;
-}
-
-export interface AcquisitionCommunicationSubmitInput extends AcquisitionCommunicationInput {
-  recipientRef: string;
-  correlationId: string;
-  idempotencyKey: string;
-}
-
-export type AcquisitionCommunicationEligibilityResult =
-  | { status: "eligible"; checkedAt: string; recipientRef: string; reason?: string }
-  | {
-      status: "hold";
-      checkedAt: string;
-      reason: string;
-      code?: "sender-not-ready" | "test-recipient-not-allowlisted" | "consent" | "suppression" | "recipient-unavailable" | "unknown";
-    }
-  | {
-      status: "suppress";
-      checkedAt: string;
-      reason: string;
-      code?: "sender-not-ready" | "test-recipient-not-allowlisted" | "consent" | "suppression" | "recipient-unavailable" | "unknown";
-    };
-
-export type AcquisitionCommunicationSubmitResult =
-  | { status: "provider-accepted"; acceptedAt: string; messageId: string; providerRequestId?: string }
-  | { status: "suppressed"; reason: string }
-  | { status: "retryable-failure"; reason: string; retryAfterSeconds?: number; providerRequestId?: string }
-  | { status: "permanent-failure"; reason: string; providerRequestId?: string }
-  | { status: "unknown-outcome"; reason: string; providerRequestId?: string };
 
 export interface CurrentCommunicationConsentFact {
   /** C-owned purpose vocabulary. */
@@ -100,18 +55,7 @@ export interface CurrentCommunicationContext {
  * email eligibility; E never receives the raw address or consent object.
  */
 export interface CurrentCommunicationContextPort {
-  readCurrent(input: AcquisitionCommunicationInput): Promise<CurrentCommunicationContext>;
-}
-
-export function mapAcquisitionPurpose(purpose: AcquisitionCommunicationPurpose): CommunicationPurpose {
-  return purpose === "service" ? "transactional" : "marketing";
-}
-
-export function parseCommunicationTemplateVersionId(value: string): number {
-  if (!/^[1-9]\d*$/.test(value)) throw new Error("Track D templateVersionId must be the decimal immutable published version number.");
-  const version = Number(value);
-  if (!Number.isSafeInteger(version)) throw new Error("Track D templateVersionId is outside the supported range.");
-  return version;
+  readCurrent(input: AcquisitionEmailEligibilityInput): Promise<CurrentCommunicationContext>;
 }
 
 export function requireApprovedCommunicationTemplateId(value: string): CommunicationTemplateId {
@@ -121,14 +65,13 @@ export function requireApprovedCommunicationTemplateId(value: string): Communica
 
 export function adaptCurrentConsent(
   fact: CurrentCommunicationConsentFact,
-  acquisitionPurpose: AcquisitionCommunicationPurpose,
+  acquisitionPurpose: CommunicationPurpose,
 ): EmailConsentSnapshot {
-  const expectedPurpose = acquisitionPurpose === "service" ? "service" : "marketing";
-  const purpose = mapAcquisitionPurpose(acquisitionPurpose);
+  const expectedPurpose = acquisitionPurpose === "transactional" ? "service" : "marketing";
   if (fact.purpose !== expectedPurpose) {
     return {
       decision: "unknown",
-      purpose,
+      purpose: acquisitionPurpose,
       source: "purpose-mismatch",
       observedAt: fact.recordedAt,
       policyVersion: fact.policyVersion,
@@ -136,14 +79,14 @@ export function adaptCurrentConsent(
   }
   return {
     decision: fact.decision === "granted" ? "granted" : fact.decision === "unknown" ? "unknown" : "denied",
-    purpose,
+    purpose: acquisitionPurpose,
     source: fact.source,
     observedAt: fact.recordedAt,
     policyVersion: fact.policyVersion,
   };
 }
 
-export function mapEligibilityForAcquisition(result: EmailEligibilityResult, checkedAt: string): AcquisitionCommunicationEligibilityResult {
+export function mapEligibilityForAcquisition(result: EmailEligibilityResult, checkedAt: string): AcquisitionEmailEligibilityResult {
   if (result.outcome === "eligible") return { status: "eligible", checkedAt, recipientRef: "resolved-later", reason: result.explanation };
   const code = result.reason === "sender-not-ready"
     ? "sender-not-ready" as const
@@ -170,12 +113,13 @@ interface EvaluatedContext {
 
 async function evaluateCurrentContext(
   source: CurrentCommunicationContextPort,
-  input: AcquisitionCommunicationInput,
+  input: AcquisitionEmailEligibilityInput,
 ): Promise<EvaluatedContext> {
   const checkedAt = new Date().toISOString();
   const templateId = requireApprovedCommunicationTemplateId(input.templateId);
-  const templateVersion = parseCommunicationTemplateVersionId(input.templateVersionId);
-  const purpose = mapAcquisitionPurpose(input.purpose);
+  const templateVersion = input.templateVersion;
+  if (!Number.isSafeInteger(templateVersion) || templateVersion < 1) throw new Error("Track D requires a positive immutable published template version.");
+  const purpose = input.purpose;
   const context = await source.readCurrent(input);
   const recipientEmail = context.recipientEmail?.trim();
   const recipientHash = recipientEmail ? hashRecipientEmail(recipientEmail) : null;
@@ -216,7 +160,7 @@ function providerRequestId(record: MessageDeliveryRecord) {
   return record.attempts[record.attempts.length - 1]?.providerRequestId;
 }
 
-function acceptedSubmission(record: MessageDeliveryRecord): AcquisitionCommunicationSubmitResult {
+function acceptedSubmission(record: MessageDeliveryRecord): AcquisitionEmailSubmitResult {
   return {
     status: "provider-accepted",
     acceptedAt: record.acceptedAt ?? record.updatedAt,
@@ -225,7 +169,7 @@ function acceptedSubmission(record: MessageDeliveryRecord): AcquisitionCommunica
   };
 }
 
-function mapRecordToSubmission(record: MessageDeliveryRecord): AcquisitionCommunicationSubmitResult {
+function mapRecordToSubmission(record: MessageDeliveryRecord): AcquisitionEmailSubmitResult {
   if (record.status === "accepted" || record.status === "delivered" || record.status === "deferred" || record.status === "bounced" || record.status === "dropped" || record.status === "complained" || record.status === "unsubscribed") {
     return acceptedSubmission(record);
   }
@@ -255,17 +199,31 @@ function mapRecordToSubmission(record: MessageDeliveryRecord): AcquisitionCommun
   };
 }
 
+function dispatchCommand(input: AcquisitionEmailSubmitInput, evaluated: EvaluatedContext) {
+  return {
+    organizationId: input.organizationId,
+    effectId: input.idempotencyKey || input.effectId,
+    mode: input.dataMode,
+    purpose: evaluated.purpose,
+    recipient: { kind: input.subjectKind, id: input.subjectId },
+    templateId: evaluated.templateId,
+    templateVersion: evaluated.templateVersion,
+    variables: evaluated.context.variables,
+    trigger: { eventId: input.correlationId, runId: input.automationVersionId },
+  } as const;
+}
+
 /**
- * Track D implementation of the structurally compatible E
- * AcquisitionEmailDispatchPort. `submit` re-reads context and runs D's evaluator
- * again after E has persisted its provider-submission ambiguity barrier.
+ * Track D implementation of E's canonical AcquisitionEmailDispatchPort. `submit`
+ * re-reads context and runs D's evaluator again after E has persisted its
+ * provider-submission ambiguity barrier.
  */
 export function createAcquisitionEmailDispatchAdapter(
   source: CurrentCommunicationContextPort,
   provider?: EmailIntegrationPort,
-) {
+): AcquisitionEmailDispatchPort {
   return {
-    async evaluate(input: AcquisitionCommunicationInput): Promise<AcquisitionCommunicationEligibilityResult> {
+    async evaluate(input: AcquisitionEmailEligibilityInput): Promise<AcquisitionEmailEligibilityResult> {
       if (input.dataMode === "preview" || input.dataMode === "demo" || input.dataMode === "development") {
         // E records these modes as dry-run immediately after evaluate and never calls submit.
         return { status: "eligible", checkedAt: new Date().toISOString(), recipientRef: `dry-run:${input.subjectKind}:${input.subjectId}` };
@@ -284,7 +242,7 @@ export function createAcquisitionEmailDispatchAdapter(
       }
     },
 
-    async submit(input: AcquisitionCommunicationSubmitInput): Promise<AcquisitionCommunicationSubmitResult> {
+    async submit(input: AcquisitionEmailSubmitInput): Promise<AcquisitionEmailSubmitResult> {
       // Never trust the earlier evaluate result as current permission. Re-read C/D
       // facts after E's ambiguity barrier and immediately before provider dispatch.
       let evaluated: EvaluatedContext;
@@ -293,32 +251,26 @@ export function createAcquisitionEmailDispatchAdapter(
       } catch (error) {
         return { status: "suppressed", reason: error instanceof Error ? error.message : "Final communication eligibility could not be resolved." };
       }
-      if (evaluated.context.recipientRef !== input.recipientRef) {
-        return { status: "suppressed", reason: "The current recipient reference changed after initial eligibility evaluation." };
-      }
-      if (evaluated.eligibility.outcome !== "eligible" || !evaluated.context.recipientEmail) {
-        return { status: "suppressed", reason: evaluated.eligibility.explanation };
-      }
 
-      const result = await dispatchEmail({
-        organizationId: input.organizationId,
-        effectId: input.idempotencyKey || input.effectId,
-        mode: input.dataMode,
-        purpose: evaluated.purpose,
-        recipient: { kind: input.subjectKind, id: input.subjectId },
-        templateId: evaluated.templateId,
-        templateVersion: evaluated.templateVersion,
-        variables: evaluated.context.variables,
-        trigger: { eventId: input.correlationId, runId: input.automationVersionId },
-      }, {
-        recipientEmail: evaluated.context.recipientEmail,
+      const recipientEmail = evaluated.context.recipientEmail;
+      const testAllowlisted = input.dataMode === "test" && recipientEmail
+        ? getControlledTestAllowlist().has(normalizeEmailAddress(recipientEmail))
+        : undefined;
+      const prerequisites = {
+        recipientEmail,
         consent: adaptCurrentConsent(evaluated.context.consent, input.purpose),
-        testAllowlisted: input.dataMode === "test"
-          ? getControlledTestAllowlist().has(normalizeEmailAddress(evaluated.context.recipientEmail))
-          : undefined,
-        eligibilityRecipientKind: input.dataMode === "test" ? "test" : input.subjectKind,
-      }, provider);
+        testAllowlisted,
+        eligibilityRecipientKind: input.dataMode === "test" ? "test" as const : input.subjectKind,
+      };
 
+      const recipientChanged = evaluated.context.recipientRef !== input.recipientRef;
+      const result = await dispatchEmail(
+        dispatchCommand(input, evaluated),
+        recipientChanged
+          ? { ...prerequisites, forcedSuppressionReason: "recipient-reference-changed-after-initial-eligibility" }
+          : prerequisites,
+        provider,
+      );
       return mapRecordToSubmission(result.record);
     },
   };
