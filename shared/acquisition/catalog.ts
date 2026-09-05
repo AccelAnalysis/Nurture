@@ -7,6 +7,8 @@ import {
   MAX_ACQUISITION_STEPS,
   type AcquisitionAutomationDefinition,
   type AcquisitionCatalogId,
+  type AcquisitionCommunicationTemplateId,
+  type AcquisitionMessagePurpose,
   type AcquisitionPredicateKey,
   type AcquisitionStopRule,
 } from "./contracts.js";
@@ -20,12 +22,15 @@ export interface AcquisitionCatalogDescriptor {
   requiredStopRules: readonly AcquisitionStopRule[];
   allowedStopRules: readonly AcquisitionStopRule[];
   allowedScheduleKinds: readonly AcquisitionAutomationDefinition["steps"][number]["schedule"]["kind"][];
+  templateId: AcquisitionCommunicationTemplateId;
+  purpose: AcquisitionMessagePurpose;
 }
 
 /**
  * Release 2 is intentionally a small approved catalog, not a general workflow
- * language. Timing, template versions, and the subset of approved optional
- * predicates remain organization configurable.
+ * language. Timing and published template version remain configurable; template
+ * identity and purpose are pinned so a marketing sequence cannot be relabeled as
+ * transactional to bypass Track D's consent/suppression policy.
  */
 export const ACQUISITION_CATALOG: Readonly<Record<AcquisitionCatalogId, AcquisitionCatalogDescriptor>> = {
   "R2-WELCOME": {
@@ -37,6 +42,8 @@ export const ACQUISITION_CATALOG: Readonly<Record<AcquisitionCatalogId, Acquisit
     requiredStopRules: ["subject.deleted"],
     allowedStopRules: ["subject.deleted", "onboarding.completed"],
     allowedScheduleKinds: ["after-trigger"],
+    templateId: "registration-welcome",
+    purpose: "transactional",
   },
   "R2-LEAD": {
     id: "R2-LEAD",
@@ -47,6 +54,8 @@ export const ACQUISITION_CATALOG: Readonly<Record<AcquisitionCatalogId, Acquisit
     requiredStopRules: ["subject.deleted", "registration.completed"],
     allowedStopRules: ["subject.deleted", "registration.completed"],
     allowedScheduleKinds: ["after-trigger"],
+    templateId: "lead-follow-up",
+    purpose: "marketing",
   },
   "R2-ACTIVATE": {
     id: "R2-ACTIVATE",
@@ -57,6 +66,8 @@ export const ACQUISITION_CATALOG: Readonly<Record<AcquisitionCatalogId, Acquisit
     requiredStopRules: ["subject.deleted", "activation.completed"],
     allowedStopRules: ["subject.deleted", "activation.completed", "commercial.ineligible", "purchase.completed"],
     allowedScheduleKinds: ["after-trigger"],
+    templateId: "activation-invitation",
+    purpose: "marketing",
   },
   "R2-ONBOARD": {
     id: "R2-ONBOARD",
@@ -67,6 +78,8 @@ export const ACQUISITION_CATALOG: Readonly<Record<AcquisitionCatalogId, Acquisit
     requiredStopRules: ["subject.deleted", "onboarding.completed"],
     allowedStopRules: ["subject.deleted", "onboarding.completed"],
     allowedScheduleKinds: ["after-trigger"],
+    templateId: "onboarding-reminder",
+    purpose: "transactional",
   },
   "R2-TRIAL": {
     id: "R2-TRIAL",
@@ -77,6 +90,8 @@ export const ACQUISITION_CATALOG: Readonly<Record<AcquisitionCatalogId, Acquisit
     requiredStopRules: ["subject.deleted", "trial.ended", "purchase.completed", "commercial.ineligible"],
     allowedStopRules: ["subject.deleted", "trial.ended", "purchase.completed", "commercial.ineligible", "activation.completed"],
     allowedScheduleKinds: ["after-trigger", "before-trial-end"],
+    templateId: "trial-conversion",
+    purpose: "marketing",
   },
   "R2-CHECKOUT": {
     id: "R2-CHECKOUT",
@@ -89,6 +104,8 @@ export const ACQUISITION_CATALOG: Readonly<Record<AcquisitionCatalogId, Acquisit
     requiredStopRules: ["subject.deleted", "purchase.completed", "commercial.ineligible"],
     allowedStopRules: ["subject.deleted", "purchase.completed", "commercial.ineligible"],
     allowedScheduleKinds: ["after-trigger"],
+    templateId: "checkout-recovery",
+    purpose: "marketing",
   },
 };
 
@@ -197,10 +214,16 @@ export function validateAcquisitionDefinition(
     if (step.action.kind !== "email") {
       throw new AcquisitionDefinitionError("Release 2 acquisition actions must be email actions.");
     }
-    nonEmpty(`steps[${index}].templateId`, step.action.templateId);
-    nonEmpty(`steps[${index}].templateVersionId`, step.action.templateVersionId);
-    if (step.action.purpose !== "service" && step.action.purpose !== "promotional") {
-      throw new AcquisitionDefinitionError(`steps[${index}].purpose is unsupported.`);
+    if (step.action.templateId !== descriptor.templateId) {
+      throw new AcquisitionDefinitionError(
+        `${definition.automationId} must use the approved ${descriptor.templateId} template.`,
+      );
+    }
+    assertIntegerRange(`steps[${index}].templateVersion`, step.action.templateVersion, 1, 1_000_000);
+    if (step.action.purpose !== descriptor.purpose) {
+      throw new AcquisitionDefinitionError(
+        `${definition.automationId} must use ${descriptor.purpose} communication purpose.`,
+      );
     }
   }
 
