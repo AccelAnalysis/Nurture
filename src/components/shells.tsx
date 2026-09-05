@@ -1,19 +1,12 @@
-import { useEffect, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { useEffect, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { useOrganization } from "../context/OrganizationContext";
+import { useConfiguration } from "../features/configuration/ConfigurationProvider";
+import { buildRegistrationHandoffHref, resolvePublicHandoffHref } from "../features/configuration/publicHandoffs";
+import { ConfiguredBrand } from "../features/configuration/PublicSite";
 import { applyPublicMetadata, trackPublicEvent } from "../features/public/publicBoundary";
 import { Link, useRoute } from "../router";
-import type { OrganizationCapability, PlatformCapability, PlatformRole } from "../security/authorization";
-import { Avatar, Badge } from "./ui";
-
-const publicLinks = [
-  ["Features", "/features"],
-  ["How it works", "/how-it-works"],
-  ["Offers", "/offers"],
-  ["Experience", "/experience"],
-  ["About", "/about"],
-  ["Help", "/help"],
-  ["Contact", "/contact"],
-] as const;
+import { organizationSectionCapability, type OrganizationCapability, type PlatformCapability, type PlatformRole } from "../security/authorization";
+import { Avatar, Badge, EmptyState } from "./ui";
 
 export function Brand() {
   return <Link className="brand" href="/"><img src="/brand/logo/nurture-n.svg" alt="" /><span>Nurture</span></Link>;
@@ -21,36 +14,60 @@ export function Brand() {
 
 export function PublicShell({ children }: { children: ReactNode }) {
   const route = useRoute();
-  useEffect(() => {
-    applyPublicMetadata(route.path);
-    trackPublicEvent("public_page_view");
-  }, [route.path]);
+  const { publicConfiguration, publicOrganizationId } = useConfiguration();
 
+  useEffect(() => {
+    applyPublicMetadata(route.path, publicConfiguration);
+    trackPublicEvent("public.page_viewed", publicOrganizationId ? { organizationId: publicOrganizationId } : {});
+  }, [publicConfiguration, publicOrganizationId, route.path]);
+
+  if (!publicConfiguration || !publicOrganizationId) {
+    return (
+      <div className="site-shell">
+        <header className="public-header content-width"><Brand /></header>
+        <main className="content-width page-section">
+          <EmptyState title="Application unavailable" description="This host is not mapped to an approved Nurture organization. No tenant configuration has been displayed." />
+        </main>
+      </div>
+    );
+  }
+
+  const publicLinks = publicConfiguration.site.navigation;
+  const createAccountHref = buildRegistrationHandoffHref({
+    organizationId: publicOrganizationId,
+    entryPoint: "public",
+    source: "public-shell",
+  });
+  const contextualHref = (href: string) => resolvePublicHandoffHref(href, publicOrganizationId);
   const captureHandoff = (event: ReactMouseEvent<HTMLDivElement>) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
     const link = target.closest("a");
     const destination = link?.getAttribute("href");
     if (!destination || !destination.startsWith("/")) return;
-    if (link?.classList.contains("button")) trackPublicEvent("public_primary_cta_selected", { destination });
-    if (destination === "/experience") trackPublicEvent("public_trial_entry_handoff", { destination });
-    else if (destination.startsWith("/offers")) trackPublicEvent("public_offer_handoff", { destination });
-    else if (["/sign-in", "/register"].includes(destination)) trackPublicEvent("public_identity_handoff", { destination });
+    const common = { organizationId: publicOrganizationId, destination };
+    if (link?.classList.contains("button")) trackPublicEvent("public.cta_selected", common);
+    if (destination.startsWith("/experience")) trackPublicEvent("public.trial_entry_handoff", common);
+    else if (destination.startsWith("/offers")) trackPublicEvent("public.offer_handoff", common);
+    else if (destination.startsWith("/sign-in") || destination.startsWith("/register")) trackPublicEvent("public.identity_handoff", common);
   };
 
+  const publicStyle = { "--n-accent": publicConfiguration.brand.accentColor } as CSSProperties;
+
   return (
-    <div className="site-shell" onClickCapture={captureHandoff}>
+    <div className="site-shell" onClickCapture={captureHandoff} style={publicStyle}>
       <header className="public-header content-width">
-        <Brand />
-        <nav aria-label="Primary">{publicLinks.slice(0, 4).map(([label, href]) => <Link key={href} href={href}>{label}</Link>)}</nav>
+        <ConfiguredBrand configuration={publicConfiguration} />
+        <nav aria-label="Primary">{publicLinks.slice(0, 4).map((item) => <Link key={item.id} href={contextualHref(item.href)}>{item.label}</Link>)}</nav>
         <div className="header-actions">
           <Link href="/sign-in">Sign In</Link>
-          <Link className="button button-small" href="/register">Create Account</Link>
+          <Link className="button button-small" href={createAccountHref}>Create Account</Link>
           <details className="mobile-public-menu">
             <summary aria-label="Open navigation">Menu</summary>
             <div>
-              {publicLinks.map(([label, href]) => <Link key={href} href={href}>{label}</Link>)}
-              <Link href="/privacy">Privacy</Link><Link href="/terms">Terms</Link>
+              {publicLinks.map((item) => <Link key={item.id} href={contextualHref(item.href)}>{item.label}</Link>)}
+              <Link href={publicConfiguration.site.privacyHref}>Privacy</Link>
+              <Link href={publicConfiguration.site.termsHref}>Terms</Link>
             </div>
           </details>
         </div>
@@ -58,11 +75,10 @@ export function PublicShell({ children }: { children: ReactNode }) {
       <main>{children}</main>
       <footer className="public-footer">
         <div className="content-width footer-grid">
-          <div><Brand /><p>One foundation for the entire customer lifecycle.</p></div>
-          <div><h3>Product</h3>{publicLinks.slice(0, 4).map(([label, href]) => <Link key={href} href={href}>{label}</Link>)}</div>
-          <div><h3>Company</h3>{publicLinks.slice(4).map(([label, href]) => <Link key={href} href={href}>{label}</Link>)}</div>
-          <div><h3>Trust</h3><Link href="/privacy">Privacy</Link><Link href="/terms">Terms</Link><Link href="/help">Support</Link></div>
-          <div><h3>Account</h3><Link href="/sign-in">Sign In</Link><Link href="/register">Create Account</Link></div>
+          <div><ConfiguredBrand configuration={publicConfiguration} /><p>{publicConfiguration.site.footerTagline}</p><small>{publicConfiguration.site.copyrightText}</small></div>
+          <div><h3>Explore</h3>{publicLinks.map((item) => <Link key={item.id} href={contextualHref(item.href)}>{item.label}</Link>)}</div>
+          <div><h3>Trust</h3><Link href={publicConfiguration.site.privacyHref}>Privacy</Link><Link href={publicConfiguration.site.termsHref}>Terms</Link><Link href="/help">Support</Link></div>
+          <div><h3>Account</h3><Link href="/sign-in">Sign In</Link><Link href={createAccountHref}>Create Account</Link>{publicConfiguration.site.contactEmail ? <Link href={`mailto:${publicConfiguration.site.contactEmail}`}>Contact</Link> : null}</div>
         </div>
       </footer>
     </div>
@@ -80,7 +96,6 @@ const appNav = [
 ] as const;
 const accountNav = [["Account", "/app/account"], ["Profile", "/app/profile"], ["Settings", "/app/settings"], ["Billing", "/app/billing"], ["Help", "/app/help"]] as const;
 const mobileAppNav = [["Home", "/app"], ["Experience", "/app/experience"], ["Secondary", "/app/secondary"], ["Notifications", "/app/notifications"], ["Account", "/app/account"]] as const;
-const trialNav = [["Experience", "/experience"], ["Offers", "/offers"], ["Create Account", "/register"]] as const;
 
 export function ParticipantShell({
   children,
@@ -92,7 +107,7 @@ export function ParticipantShell({
   onSignOut,
 }: {
   children: ReactNode;
-  mode: "trial" | "authenticated";
+  mode: "public" | "trial" | "authenticated";
   displayName?: string | null;
   organizationAdminHref?: string;
   platformAdminHref?: string;
@@ -100,11 +115,26 @@ export function ParticipantShell({
   onSignOut?: () => void | Promise<void>;
 }) {
   const route = useRoute();
+  const { publicOrganizationId } = useConfiguration();
   const authenticated = mode === "authenticated";
+  const trialRegistrationHref = publicOrganizationId
+    ? buildRegistrationHandoffHref({
+        organizationId: publicOrganizationId,
+        entryPoint: "trial",
+        returnTo: "/app/experience",
+        source: "participant-trial-shell",
+      })
+    : "/register";
+  const trialNav = [["Experience", "/experience"], ["Offers", "/offers"], ["Create Account", trialRegistrationHref]] as const;
   return (
     <div className={`app-layout participant-layout participant-${mode}`}>
       <aside className="sidebar">
-        <div><Brand />{demo ? <Badge tone="accent">Demo data</Badge> : null}{mode === "trial" ? <Badge tone="accent">Public trial</Badge> : null}</div>
+        <div>
+          <Brand />
+          {demo ? <Badge tone="accent">Demo data</Badge> : null}
+          {mode === "public" ? <Badge tone="accent">Public access</Badge> : null}
+          {mode === "trial" ? <Badge tone="accent">Trial access</Badge> : null}
+        </div>
         <nav aria-label="Participant application">
           {(authenticated ? appNav : trialNav).map(([label, href]) => <Link key={href} href={href} className={route.path === href ? "active" : ""}>{label}</Link>)}
         </nav>
@@ -119,8 +149,8 @@ export function ParticipantShell({
       </aside>
       <div className="app-main">
         <header className="app-topbar">
-          <span className="muted">{authenticated ? "Nurture app" : "Nurture trial experience"}</span>
-          {authenticated ? <Link className="user-chip" href="/app/account"><Avatar name={displayName ?? "User"} /><span>{displayName ?? "Account"}</span></Link> : <Link href="/register">Create account</Link>}
+          <span className="muted">{authenticated ? "Nurture app" : mode === "trial" ? "Nurture trial experience" : "Nurture public experience"}</span>
+          {authenticated ? <Link className="user-chip" href="/app/account"><Avatar name={displayName ?? "User"} /><span>{displayName ?? "Account"}</span></Link> : <Link href={trialRegistrationHref}>Create account</Link>}
         </header>
         <main className="app-content">{children}</main>
         <nav className={`mobile-nav ${authenticated ? "" : "trial-mobile-nav"}`} aria-label="Mobile participant application">
@@ -131,10 +161,12 @@ export function ParticipantShell({
   );
 }
 
+const brandViewCapability = organizationSectionCapability.brand;
 const orgNav: Array<[string, string, OrganizationCapability]> = [
   ["Overview", "", "workspace.view"],
   ["Dashboard", "/dashboard", "workspace.view"],
   ["Profile", "/profile", "profile.manage"],
+  ["Brand & Site", "/brand-site", brandViewCapability],
   ["Team & Access", "/members", "members.view"],
   ["Roles", "/roles", "roles.manage"],
   ["Invitations", "/invitations", "members.manage"],
@@ -143,7 +175,7 @@ const orgNav: Array<[string, string, OrganizationCapability]> = [
   ["Sequences", "/sequences", "sequences.manage"],
   ["Templates", "/templates", "templates.manage"],
   ["Surveys", "/surveys", "surveys.manage"],
-  ["Offers", "/offers", "offers.manage"],
+  ["Offers", "/offers", "offers.view"],
   ["Referrals", "/referrals", "referrals.manage"],
   ["Feedback", "/feedback", "feedback.view"],
   ["Analytics", "/analytics", "analytics.view"],
@@ -156,6 +188,13 @@ export function OrganizationShell({ children, organizationId }: { children: Reac
   const { getAccess } = useOrganization();
   const access = getAccess(organizationId);
   const base = `/org/${organizationId}/admin`;
+  const mobileItems: Array<[string, string, OrganizationCapability]> = [
+    ["Dashboard", "/dashboard", "workspace.view"],
+    ["Brand & Site", "/brand-site", brandViewCapability],
+    ["Contacts", "/contacts", "contacts.view"],
+    ["Surveys", "/surveys", "surveys.manage"],
+    ["Settings", "/settings", "settings.manage"],
+  ];
   return (
     <div className="app-layout org-layout">
       <aside className="sidebar">
@@ -173,7 +212,7 @@ export function OrganizationShell({ children, organizationId }: { children: Reac
         <header className="app-topbar"><span>Organization administration</span><div className="scope-actions"><Badge tone="accent">Organization scope</Badge><Link href="/app/account">Account</Link></div></header>
         <main className="app-content">{children}</main>
         <nav className="mobile-nav org-mobile-nav" aria-label="Mobile organization administration">
-          {[["Dashboard", "/dashboard"], ["Contacts", "/contacts"], ["Sequences", "/sequences"], ["Surveys", "/surveys"], ["Settings", "/settings"]].map(([label, suffix]) => {
+          {mobileItems.filter(([, , capability]) => access.can(capability)).map(([label, suffix]) => {
             const href = `${base}${suffix}`;
             return <Link key={href} href={href} className={route.path === href ? "active" : ""}>{label}</Link>;
           })}

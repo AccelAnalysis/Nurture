@@ -1,11 +1,17 @@
+import { localDemoEnabled, releaseBackendReady, backendUnavailableMessage } from "../app/release/readiness";
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { User } from "firebase/auth";
 import { authService } from "../services/authService";
+import { firebaseConfigured } from "../firebase";
 import { demoUser } from "../data/demo";
 import type { NurtureUser, OrganizationRole } from "../types/models";
+import type { CustomerProfile, CustomerProfileChanges, IdentitySession } from "../features/identity/model/contracts";
+import { customerProfileRepository } from "../features/identity/services/customerProfileRepository";
 
-interface AuthContextValue {
+export interface AuthContextValue {
   firebaseUser: User | null;
+  identity: IdentitySession | null;
+  customerProfile: CustomerProfile | null;
   currentUser: NurtureUser | null;
   loading: boolean;
   error: string | null;
@@ -13,6 +19,8 @@ interface AuthContextValue {
   isDemo: boolean;
   signInDemo: (role?: OrganizationRole) => void;
   clearDemo: () => void;
+  refreshCustomerProfile: () => Promise<CustomerProfile | null>;
+  updateCustomerProfile: (changes: CustomerProfileChanges) => Promise<CustomerProfile>;
   signOut: () => Promise<void>;
 }
 
@@ -21,61 +29,131 @@ const DEMO_KEY = "nurture-demo-role";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
+  const [customerProfile, setCustomerProfile] = useState<CustomerProfile | null>(null);
   const [demoRole, setDemoRole] = useState<OrganizationRole | null>(() => {
-    const saved = sessionStorage.getItem(DEMO_KEY);
-    return (saved as OrganizationRole | null) ?? null;
+    const saved = localDemoEnabled ? sessionStorage.getItem(DEMO_KEY) : null;
+    return saved && ["owner", "administrator", "manager", "member"].includes(saved) ? saved as OrganizationRole : null;
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!releaseBackendReady) {
+      setLoading(false);
+      return;
+    }
+    let active = true;
+    let authGeneration = 0;
     let unsubscribe: () => void = () => {};
     authService
       .initializePersistence()
       .then(() => {
+        if (!active) return;
         unsubscribe = authService.observe((user) => {
+          if (!active) return;
+          const generation = ++authGeneration;
           setFirebaseUser(user);
-          setLoading(false);
+          setError(null);
+          if (!user || user.isAnonymous) {
+            setCustomerProfile(null);
+            setLoading(false);
+            return;
+          }
+          setLoading(true);
+          customerProfileRepository
+            .getOrCreate(user)
+            .then((profile) => {
+              if (!active || generation !== authGeneration) return;
+              setCustomerProfile(profile);
+              setLoading(false);
+            })
+            .catch((reason: unknown) => {
+              if (!active || generation !== authGeneration) return;
+              setCustomerProfile(null);
+              setError(reason instanceof Error ? reason.message : "Unable to load the Nurture customer profile.");
+              setLoading(false);
+            });
         });
       })
       .catch((reason: unknown) => {
+        if (!active) return;
         setError(reason instanceof Error ? reason.message : "Unable to initialize authentication.");
         setLoading(false);
       });
-    const fallback = window.setTimeout(() => setLoading(false), 250);
+
+    // Firebase may be intentionally unconfigured in static/local skeleton views.
+    if (!firebaseConfigured) setLoading(false);
     return () => {
-      window.clearTimeout(fallback);
+      active = false;
       unsubscribe();
     };
   }, []);
 
+  const identity: IdentitySession | null = firebaseUser
+    ? {
+        identityId: firebaseUser.uid,
+        kind: firebaseUser.isAnonymous ? "anonymous" : "registered",
+        email: firebaseUser.email,
+        emailVerified: firebaseUser.emailVerified,
+        providerIds: firebaseUser.providerData.map((provider) => provider.providerId),
+        ...(firebaseUser.metadata.lastSignInTime ? { authenticatedAt: firebaseUser.metadata.lastSignInTime } : {}),
+      }
+    : null;
+
   const currentUser = useMemo<NurtureUser | null>(() => {
     if (demoRole) return demoUser;
-    if (!firebaseUser) return null;
+    if (!firebaseUser || firebaseUser.isAnonymous || !customerProfile) return null;
     return {
       uid: firebaseUser.uid,
-      email: firebaseUser.email,
-      displayName: firebaseUser.displayName,
+      email: customerProfile.email,
+      displayName: customerProfile.displayName,
+      ...(customerProfile.firstName ? { firstName: customerProfile.firstName } : {}),
+      ...(customerProfile.lastName ? { lastName: customerProfile.lastName } : {}),
       photoURL: firebaseUser.photoURL,
-      phone: firebaseUser.phoneNumber,
-      status: "active",
-      createdAt: firebaseUser.metadata.creationTime ?? new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      onboardingStatus: "in-progress",
-      preferences: { theme: "system", emailNotifications: true, smsNotifications: false, pushNotifications: true },
+      phone: customerProfile.phone,
+      status: customerProfile.status,
+      createdAt: customerProfile.createdAt,
+      updatedAt: customerProfile.updatedAt,
+      onboardingStatus: customerProfile.onboardingStatus,
+      preferences: customerProfile.preferences,
       lastActiveAt: firebaseUser.metadata.lastSignInTime,
-      isAnonymous: firebaseUser.isAnonymous,
+      isAnonymous: false,
     };
-  }, [demoRole, firebaseUser]);
+  }, [customerProfile, demoRole, firebaseUser]);
+
+  async function refreshCustomerProfile() {
+    if (!releaseBackendReady) throw new Error(backendUnavailableMessage);
+    const user = authService.getCurrentUser();
+    if (!user || user.isAnonymous) {
+      setCustomerProfile(null);
+      return null;
+    }
+    const profile = await customerProfileRepository.getOrCreate(user);
+    setCustomerProfile(profile);
+    setFirebaseUser(user);
+    return profile;
+  }
+
+  async function updateCustomerProfile(changes: CustomerProfileChanges) {
+    if (!releaseBackendReady) throw new Error(backendUnavailableMessage);
+    const user = authService.getCurrentUser();
+    if (!user || user.isAnonymous) throw new Error("A registered identity is required to update the customer profile.");
+    const profile = await customerProfileRepository.update(user.uid, changes);
+    setCustomerProfile(profile);
+    return profile;
+  }
 
   const value: AuthContextValue = {
     firebaseUser,
+    identity,
+    customerProfile,
     currentUser,
     loading,
     error,
     demoRole,
     isDemo: Boolean(demoRole),
     signInDemo(role = "member") {
+      if (!localDemoEnabled) return;
       sessionStorage.setItem(DEMO_KEY, role);
       setDemoRole(role);
     },
@@ -83,9 +161,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       sessionStorage.removeItem(DEMO_KEY);
       setDemoRole(null);
     },
+    refreshCustomerProfile,
+    updateCustomerProfile,
     async signOut() {
       sessionStorage.removeItem(DEMO_KEY);
       setDemoRole(null);
+      setCustomerProfile(null);
       await authService.signOut();
     },
   };

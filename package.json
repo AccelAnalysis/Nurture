@@ -13,10 +13,13 @@
     "prebuild": "npm run brand:sync",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "preview": "vite preview",
     "firebase:emulate": "npx -y firebase-tools@latest emulators:start --only hosting",
     "firebase:preview": "npm run build && npx -y firebase-tools@latest hosting:channel:deploy bootstrap --project nurture-12398 --expires 7d",
-    "firebase:deploy": "npm run build && npx -y firebase-tools@latest deploy --only hosting --project nurture-12398"
+    "firebase:deploy": "npm run build && npx -y firebase-tools@latest deploy --only hosting --project nurture-12398",
+    "test:experience": "node scripts/verify-experience-entitlements.mjs",
+    "test:browser": "node scripts/verify-release-browser.mjs"
   },
   "dependencies": {
     "firebase": "^12.18.0",
@@ -28,6 +31,8 @@
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.1.1",
     "typescript": "^7.0.2",
-    "vite": "^8.2.2"
+    "vite": "^8.2.2",
+    "vitest": "^4.1.11",
+    "@playwright/test": "^1.58.0"
   }
 }

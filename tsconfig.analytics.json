@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": ".tmp/analytics",
+    "rootDir": "shared/analytics",
+    "module": "ES2022",
+    "moduleResolution": "Bundler",
+    "isolatedModules": false,
+    "declaration": false,
+    "sourceMap": false
+  },
+  "include": [
+    "shared/analytics/contracts.ts",
+    "shared/analytics/core.ts"
+  ]
+}
