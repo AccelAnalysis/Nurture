@@ -1,0 +1,13 @@
+.scope-actions { display:flex; align-items:center; gap:12px; }
+.platform-scope { display:grid; gap:2px; padding:12px; border:1px solid var(--n-border); border-radius:14px; background:color-mix(in srgb,var(--n-accent) 5%,var(--n-surface)); }
+.platform-scope small,.platform-scope span { color:var(--n-text-tertiary); font-size:12px; text-transform:capitalize; }
+.platform-layout .sidebar { border-right-color:color-mix(in srgb,var(--n-accent) 30%,var(--n-border)); }
+.participant-trial .sidebar { background:color-mix(in srgb,var(--n-surface) 94%,var(--n-accent)); }
+.access-state { padding-block:64px; }
+@media (max-width:760px) {
+  .trial-mobile-nav { grid-template-columns:repeat(3,1fr); }
+  .scope-actions a { display:none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior:auto; }
+}
