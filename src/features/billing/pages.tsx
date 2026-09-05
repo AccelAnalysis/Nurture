@@ -78,6 +78,7 @@ function OfferBenefits({ offer }: { offer: CommercialOffer }) {
 
 export function PublicOffersPage({ organizationId = DEMO_ORG_ID }: { organizationId?: string }) {
   const [offers, setOffers] = useState<CommercialOffer[]>(fallbackPublishedOffers);
+  const [trialsEnabled, setTrialsEnabled] = useState(false);
   const [interval, setInterval] = useState<BillingInterval>("month");
   const [error, setError] = useState<string | null>(null);
 
@@ -85,7 +86,12 @@ export function PublicOffersPage({ organizationId = DEMO_ORG_ID }: { organizatio
     if (!firebaseConfigured) return;
     let cancelled = false;
     listPublishedOffers(organizationId)
-      .then((items) => { if (!cancelled) setOffers(items); })
+      .then((result) => {
+        if (!cancelled) {
+          setOffers(result.offers);
+          setTrialsEnabled(result.trialsEnabled);
+        }
+      })
       .catch((cause) => { if (!cancelled) setError(messageFrom(cause)); });
     return () => { cancelled = true; };
   }, [organizationId]);
@@ -109,7 +115,7 @@ export function PublicOffersPage({ organizationId = DEMO_ORG_ID }: { organizatio
           <Card key={offer.id}>
             <div className="card-heading">
               <div><Badge tone={offer.recommended ? "accent" : "neutral"}>{offer.recommended ? "Recommended" : offer.status}</Badge><h2>{offer.name}</h2></div>
-              {offer.trialDays ? <Badge>{offer.trialDays}-day trial option</Badge> : null}
+              {trialsEnabled && offer.trialDays ? <Badge>{offer.trialDays}-day trial</Badge> : null}
             </div>
             <p>{offer.description}</p>
             <PriceChoice offer={offer} interval={interval} onInterval={setInterval} />
@@ -128,6 +134,7 @@ export function PublicOffersPage({ organizationId = DEMO_ORG_ID }: { organizatio
 
 export function PublicOfferDetail({ offerId, organizationId = DEMO_ORG_ID }: { offerId: string; organizationId?: string }) {
   const [offers, setOffers] = useState<CommercialOffer[]>(fallbackPublishedOffers);
+  const [trialsEnabled, setTrialsEnabled] = useState(false);
   const [interval, setInterval] = useState<BillingInterval>("month");
   const [error, setError] = useState<string | null>(null);
 
@@ -135,7 +142,12 @@ export function PublicOfferDetail({ offerId, organizationId = DEMO_ORG_ID }: { o
     if (!firebaseConfigured) return;
     let cancelled = false;
     listPublishedOffers(organizationId)
-      .then((items) => { if (!cancelled) setOffers(items); })
+      .then((result) => {
+        if (!cancelled) {
+          setOffers(result.offers);
+          setTrialsEnabled(result.trialsEnabled);
+        }
+      })
       .catch((cause) => { if (!cancelled) setError(messageFrom(cause)); });
     return () => { cancelled = true; };
   }, [organizationId]);
@@ -152,7 +164,7 @@ export function PublicOfferDetail({ offerId, organizationId = DEMO_ORG_ID }: { o
     <section className="content-width page-section narrow">
       <PageHeader eyebrow="Offer" title={offer.name} description={offer.description} />
       <Card>
-        <div className="card-heading"><Badge tone={offer.recommended ? "accent" : "neutral"}>{offer.recommended ? "Recommended" : "Offer"}</Badge>{offer.trialDays ? <Badge>{offer.trialDays}-day trial option</Badge> : null}</div>
+        <div className="card-heading"><Badge tone={offer.recommended ? "accent" : "neutral"}>{offer.recommended ? "Recommended" : "Offer"}</Badge>{trialsEnabled && offer.trialDays ? <Badge>{offer.trialDays}-day trial</Badge> : null}</div>
         <PriceChoice offer={offer} interval={interval} onInterval={setInterval} />
         <OfferBenefits offer={offer} />
         <div className="hero-actions">
@@ -171,6 +183,7 @@ export function ParticipantOffersPage() {
   const { currentOrganizationId } = useOrganization();
   const organizationId = currentOrganizationId ?? DEMO_ORG_ID;
   const [offers, setOffers] = useState<CommercialOffer[]>(fallbackPublishedOffers);
+  const [trialsEnabled, setTrialsEnabled] = useState(false);
   const [interval, setInterval] = useState<BillingInterval>("month");
   const [busyOfferId, setBusyOfferId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -179,7 +192,12 @@ export function ParticipantOffersPage() {
     if (!firebaseConfigured) return;
     let cancelled = false;
     listPublishedOffers(organizationId)
-      .then((items) => { if (!cancelled) setOffers(items); })
+      .then((result) => {
+        if (!cancelled) {
+          setOffers(result.offers);
+          setTrialsEnabled(result.trialsEnabled);
+        }
+      })
       .catch((cause) => { if (!cancelled) setError(messageFrom(cause)); });
     return () => { cancelled = true; };
   }, [organizationId]);
@@ -208,7 +226,7 @@ export function ParticipantOffersPage() {
       <div className="pricing-grid">
         {offers.filter((offer) => !["disabled", "archived"].includes(offer.status)).sort((a, b) => a.order - b.order).map((offer) => (
           <Card key={offer.id}>
-            <Badge tone={offer.recommended ? "accent" : "neutral"}>{offer.recommended ? "Recommended" : offer.status}</Badge>
+            <div className="card-heading"><Badge tone={offer.recommended ? "accent" : "neutral"}>{offer.recommended ? "Recommended" : offer.status}</Badge>{trialsEnabled && offer.trialDays ? <Badge>{offer.trialDays}-day trial</Badge> : null}</div>
             <h2>{offer.name}</h2><p>{offer.description}</p>
             <PriceChoice offer={offer} interval={interval} onInterval={setInterval} />
             <OfferBenefits offer={offer} />
@@ -254,7 +272,7 @@ export function ParticipantBillingPage() {
       {loading ? <Card><p role="status">Loading verified subscription…</p></Card> : subscription ? (
         <div className="two-column">
           <Card><Badge tone={subscription.status === "active" || subscription.status === "trialing" ? "positive" : "warning"}>{subscription.status}</Badge><h2>{subscription.offerId}</h2><p>{formatMinorAmount(subscription.unitAmountMinor, subscription.currency)} / {subscription.billingInterval}</p><p>Current period ends: {subscription.currentPeriodEnd ?? "Pending provider data"}</p><p>Cancel at period end: {subscription.cancelAtPeriodEnd ? "Yes" : "No"}</p><Button onClick={() => void openPortal()}>Manage in Stripe</Button></Card>
-          <Card><h2>Trusted commercial handoff</h2><p>Provider: {subscription.provider}</p><p>Verified: {subscription.trustedAt}</p><p className="muted">Track B receives this provider-neutral subscription snapshot and decides which Experience capabilities are granted.</p></Card>
+          <Card><h2>Trusted commercial handoff</h2><p>Offer version: v{subscription.offerVersion}</p><p>Offer price: {subscription.offerPriceId}</p><p>Provider: {subscription.provider}</p><p>Verified: {subscription.trustedAt}</p><p className="muted">Track B receives this provider-neutral subscription snapshot and decides which Experience capabilities are granted.</p></Card>
         </div>
       ) : <EmptyState title="No verified subscription" description={firebaseConfigured ? "No provider-backed subscription is currently recorded for this organization/customer relationship." : "Demo mode does not manufacture a paid subscription."} action={<Link className="button" href="/app/offers">View offers</Link>} />}
     </>
@@ -336,7 +354,7 @@ export function OrganizationOffersPage({ organizationId }: { organizationId: str
       <div className="two-column">
         <Card>
           <h2>Offer library</h2>
-          {offers.sort((a, b) => a.order - b.order).map((offer) => <button className={`template-list-item ${offer.id === selected.id ? "active" : ""}`} key={offer.id} onClick={() => setSelectedId(offer.id)}><span>{offer.name}</span><small>{offer.status} · {offer.visibility}{offer.recommended ? " · recommended" : ""}</small></button>)}
+          {[...offers].sort((a, b) => a.order - b.order).map((offer) => <button className={`template-list-item ${offer.id === selected.id ? "active" : ""}`} key={offer.id} onClick={() => setSelectedId(offer.id)}><span>{offer.name}</span><small>{offer.status} · {offer.visibility}{offer.recommended ? " · recommended" : ""}</small></button>)}
         </Card>
         <Card className="form-card">
           <div className="card-heading"><div><Badge>{selected.status}</Badge><h2>{selected.name}</h2></div><Badge tone="accent">v{selected.version}</Badge></div>
@@ -346,6 +364,7 @@ export function OrganizationOffersPage({ organizationId }: { organizationId: str
             <label>Visibility<Select value={selected.visibility} onChange={(event) => update({ visibility: event.target.value as CommercialOffer["visibility"] })}><option value="public">Public</option><option value="authenticated">Authenticated</option><option value="hidden">Hidden</option></Select></label>
             <label>Trial days<Input type="number" min="0" value={selected.trialDays ?? 0} onChange={(event) => update({ trialDays: Math.max(0, Number(event.target.value)) || undefined })} /></label>
           </div>
+          <p className="muted">Trial duration may be configured here, but customers see and receive a trial only when the server-side Release 1 trial policy gate is enabled.</p>
           <label><input type="checkbox" checked={selected.recommended} onChange={(event) => update({ recommended: event.target.checked })} /> Recommended offer</label>
           <label>Marketing benefits<TextArea rows={4} value={selected.marketingBenefits.join("\n")} onChange={(event) => update({ marketingBenefits: event.target.value.split("\n").map((item) => item.trim()).filter(Boolean) })} /></label>
           <label>Experience capability keys<TextArea rows={3} value={selected.capabilityKeys.join("\n")} onChange={(event) => update({ capabilityKeys: event.target.value.split("\n").map((item) => item.trim()).filter(Boolean) })} /></label>
@@ -362,7 +381,7 @@ export function OrganizationOffersPage({ organizationId }: { organizationId: str
           </div>
           {monthly && annual ? <p className="muted">{describeAnnualComparison(monthly, annual)}</p> : null}
           <div className="hero-actions"><Button disabled={!firebaseConfigured} onClick={() => void save()}>Save draft</Button><Button className="button-secondary" disabled={!firebaseConfigured || selected.status !== "draft"} onClick={() => void publish()}>Publish</Button></div>
-          <small>Publishing paid prices requires Stripe test-mode Price mappings. Existing subscription mappings are not rewritten when a draft price changes.</small>
+          <small>Publishing paid prices requires Stripe test-mode Price mappings. Existing subscribers remain bound to their immutable published Offer version when a later draft changes price or capabilities.</small>
         </Card>
       </div>
     </>
