@@ -9,6 +9,7 @@ import type { FeedbackScope } from "../../../shared/feedback/contracts.js";
 import { id, invariant } from "../../../shared/feedback/validation.js";
 import type { StoredSubscription } from "../billing/model.js";
 import { db } from "../firebase.js";
+import { syncFeedbackAutomationDraft } from "./automation-sync.js";
 import { feedbackCrypto } from "./crypto.js";
 import { FirestoreFeedbackStore, type FeedbackAtomicEffects, type FeedbackAtomicHooks } from "./firestore-store.js";
 import { key, type FeedbackDependencies, type FeedbackPolicy, type FeedbackTransaction, type TrustedFeedbackActor } from "./ports.js";
@@ -160,6 +161,7 @@ export function createFeedbackComposition(options: FeedbackCompositionOptions) {
       const paidAt = Date.parse(data.trustedAt);
       return { evidenceId, customerId: data.customerId, status: paid ? "paid" as const : "pending" as const, paidAt: Number.isFinite(paidAt) ? paidAt : 0, current: true };
     },
+    syncAutomation: syncFeedbackAutomationDraft,
   };
 
   return { deps, store };
