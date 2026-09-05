@@ -1,7 +1,45 @@
 import type { OrganizationMembership, OrganizationRole } from "../types/models";
 
+/**
+ * Release 1 organization capabilities. Feature tracks should depend on these
+ * names instead of comparing role strings. These checks are for UI behavior;
+ * trusted backends and Firebase Security Rules must independently enforce the
+ * same tenant and privilege boundary before any protected mutation is enabled.
+ */
 export type OrganizationCapability =
   | "workspace.view"
+  | "brand.view"
+  | "brand.manage"
+  | "brand.publish"
+  | "offers.view"
+  | "offers.manage"
+  | "offers.publish"
+  | "experience.view"
+  | "experience.manage"
+  | "experience.publish"
+  | "onboarding.view"
+  | "onboarding.manage"
+  | "onboarding.publish"
+  | "customers.view"
+  | "customers.manage"
+  | "customers.export"
+  | "lifecycle.view"
+  | "lifecycle.manage"
+  | "communications.view"
+  | "communications.manage"
+  | "surveys.view"
+  | "surveys.manage"
+  | "referrals.view"
+  | "referrals.manage"
+  | "analytics.view"
+  | "billing.view"
+  | "billing.manage"
+  | "team.view"
+  | "team.manage"
+  | "audit.view"
+  | "settings.view"
+  | "settings.manage"
+  // Compatibility names retained while the original skeleton routes migrate.
   | "profile.manage"
   | "members.view"
   | "members.manage"
@@ -10,41 +48,67 @@ export type OrganizationCapability =
   | "contacts.manage"
   | "sequences.manage"
   | "templates.manage"
-  | "surveys.manage"
-  | "offers.manage"
-  | "referrals.manage"
-  | "feedback.view"
-  | "analytics.view"
-  | "billing.manage"
-  | "settings.manage";
+  | "feedback.view";
 
-const managerCapabilities: OrganizationCapability[] = [
+const managerCapabilities: readonly OrganizationCapability[] = [
   "workspace.view",
-  "members.view",
+  "brand.view",
+  "brand.manage",
+  "offers.view",
+  "offers.manage",
+  "experience.view",
+  "experience.manage",
+  "onboarding.view",
+  "onboarding.manage",
+  "customers.view",
+  "customers.manage",
+  "lifecycle.view",
+  "lifecycle.manage",
+  "communications.view",
+  "communications.manage",
+  "surveys.view",
+  "surveys.manage",
+  "referrals.view",
+  "referrals.manage",
+  "analytics.view",
+  // Legacy skeleton destinations map to the same Release 1 authority.
   "contacts.view",
   "contacts.manage",
   "sequences.manage",
   "templates.manage",
-  "surveys.manage",
-  "offers.manage",
-  "referrals.manage",
   "feedback.view",
-  "analytics.view",
 ];
 
-const administratorCapabilities: OrganizationCapability[] = [
+const administratorCapabilities: readonly OrganizationCapability[] = [
   ...managerCapabilities,
+  "brand.publish",
+  "offers.publish",
+  "experience.publish",
+  "onboarding.publish",
+  "customers.export",
+  "billing.view",
+  "billing.manage",
+  "team.view",
+  "team.manage",
+  "audit.view",
+  "settings.view",
+  "settings.manage",
+  // Compatibility names retained for the current organization shell.
   "profile.manage",
+  "members.view",
   "members.manage",
   "roles.manage",
-  "billing.manage",
-  "settings.manage",
 ];
 
+export const organizationRoleCapabilityPresets: Readonly<Record<OrganizationRole, readonly OrganizationCapability[]>> = {
+  owner: administratorCapabilities,
+  administrator: administratorCapabilities,
+  manager: managerCapabilities,
+  member: [],
+};
+
 export function organizationCapabilitiesForRole(role: OrganizationRole): ReadonlySet<OrganizationCapability> {
-  if (role === "owner" || role === "administrator") return new Set(administratorCapabilities);
-  if (role === "manager") return new Set(managerCapabilities);
-  return new Set();
+  return new Set(organizationRoleCapabilityPresets[role]);
 }
 
 export function organizationCan(membership: OrganizationMembership | null, capability: OrganizationCapability) {
@@ -56,21 +120,30 @@ export function organizationCan(membership: OrganizationMembership | null, capab
 export const organizationSectionCapability: Record<string, OrganizationCapability> = {
   overview: "workspace.view",
   dashboard: "workspace.view",
-  profile: "profile.manage",
-  members: "members.view",
-  roles: "roles.manage",
-  invitations: "members.manage",
-  contacts: "contacts.view",
-  lifecycle: "contacts.view",
-  sequences: "sequences.manage",
-  templates: "templates.manage",
-  surveys: "surveys.manage",
-  offers: "offers.manage",
-  referrals: "referrals.manage",
-  feedback: "feedback.view",
+  brand: "brand.view",
+  site: "brand.view",
+  offers: "offers.view",
+  experience: "experience.view",
+  onboarding: "onboarding.view",
+  customers: "customers.view",
+  lifecycle: "lifecycle.view",
+  communications: "communications.view",
+  surveys: "surveys.view",
+  referrals: "referrals.view",
   analytics: "analytics.view",
-  billing: "billing.manage",
-  settings: "settings.manage",
+  billing: "billing.view",
+  team: "team.view",
+  audit: "audit.view",
+  settings: "settings.view",
+  // Legacy skeleton destinations.
+  profile: "settings.view",
+  members: "team.view",
+  roles: "team.manage",
+  invitations: "team.manage",
+  contacts: "customers.view",
+  sequences: "lifecycle.view",
+  templates: "communications.view",
+  feedback: "customers.view",
 };
 
 export type PlatformRole =
@@ -100,7 +173,29 @@ export type PlatformCapability =
   | "settings.view"
   | "settings.manage";
 
-const platformReadCapabilities: PlatformCapability[] = [
+export const platformCapabilities: readonly PlatformCapability[] = [
+  "platform.view",
+  "organizations.view",
+  "organizations.manage",
+  "access.view",
+  "access.manage",
+  "product.view",
+  "product.manage",
+  "plans.view",
+  "plans.manage",
+  "communications.view",
+  "communications.manage",
+  "integrations.view",
+  "integrations.manage",
+  "operations.view",
+  "operations.manage",
+  "audit.view",
+  "settings.view",
+  "settings.manage",
+];
+
+const platformCapabilitySet = new Set<PlatformCapability>(platformCapabilities);
+const platformReadCapabilities: readonly PlatformCapability[] = [
   "platform.view",
   "organizations.view",
   "access.view",
@@ -113,7 +208,7 @@ const platformReadCapabilities: PlatformCapability[] = [
   "settings.view",
 ];
 
-const platformManageCapabilities: PlatformCapability[] = [
+const platformManageCapabilities: readonly PlatformCapability[] = [
   ...platformReadCapabilities,
   "organizations.manage",
   "access.manage",
@@ -125,10 +220,10 @@ const platformManageCapabilities: PlatformCapability[] = [
   "settings.manage",
 ];
 
-export function platformCapabilitiesForRole(role: PlatformRole | null): ReadonlySet<PlatformCapability> {
-  if (!role) return new Set();
-  if (role === "super-administrator" || role === "administrator") return new Set(platformManageCapabilities);
-  if (role === "support") return new Set([
+export const platformRoleCapabilityPresets = {
+  "super-administrator": platformManageCapabilities,
+  administrator: platformManageCapabilities,
+  support: [
     "platform.view",
     "organizations.view",
     "access.view",
@@ -136,9 +231,27 @@ export function platformCapabilitiesForRole(role: PlatformRole | null): Readonly
     "integrations.view",
     "operations.view",
     "audit.view",
-  ]);
-  if (role === "read-only") return new Set(platformReadCapabilities);
-  return new Set();
+  ],
+  "read-only": platformReadCapabilities,
+} as const satisfies Record<Exclude<PlatformRole, `custom:${string}`>, readonly PlatformCapability[]>;
+
+export function isPlatformRole(value: unknown): value is PlatformRole {
+  if (typeof value !== "string") return false;
+  return value === "super-administrator"
+    || value === "administrator"
+    || value === "support"
+    || value === "read-only"
+    || (value.startsWith("custom:") && value.length > 7 && value.length <= 80);
+}
+
+export function isPlatformCapability(value: unknown): value is PlatformCapability {
+  return typeof value === "string" && platformCapabilitySet.has(value as PlatformCapability);
+}
+
+export function platformCapabilitiesForRole(role: PlatformRole | null): ReadonlySet<PlatformCapability> {
+  if (!role) return new Set();
+  if (role.startsWith("custom:")) return new Set();
+  return new Set(platformRoleCapabilityPresets[role]);
 }
 
 export const platformSectionCapability: Record<string, PlatformCapability> = {
