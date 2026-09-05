@@ -1,19 +1,11 @@
-import { useEffect, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { useEffect, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { useOrganization } from "../context/OrganizationContext";
+import { useConfiguration } from "../features/configuration/ConfigurationProvider";
+import { ConfiguredBrand } from "../features/configuration/PublicSite";
 import { applyPublicMetadata, trackPublicEvent } from "../features/public/publicBoundary";
 import { Link, useRoute } from "../router";
 import type { OrganizationCapability, PlatformCapability, PlatformRole } from "../security/authorization";
-import { Avatar, Badge } from "./ui";
-
-const publicLinks = [
-  ["Features", "/features"],
-  ["How it works", "/how-it-works"],
-  ["Offers", "/offers"],
-  ["Experience", "/experience"],
-  ["About", "/about"],
-  ["Help", "/help"],
-  ["Contact", "/contact"],
-] as const;
+import { Avatar, Badge, EmptyState } from "./ui";
 
 export function Brand() {
   return <Link className="brand" href="/"><img src="/brand/logo/nurture-n.svg" alt="" /><span>Nurture</span></Link>;
@@ -21,36 +13,54 @@ export function Brand() {
 
 export function PublicShell({ children }: { children: ReactNode }) {
   const route = useRoute();
-  useEffect(() => {
-    applyPublicMetadata(route.path);
-    trackPublicEvent("public_page_view");
-  }, [route.path]);
+  const { publicConfiguration, publicOrganizationId } = useConfiguration();
 
+  useEffect(() => {
+    applyPublicMetadata(route.path, publicConfiguration);
+    trackPublicEvent("public.page_viewed", publicOrganizationId ? { organizationId: publicOrganizationId } : {});
+  }, [publicConfiguration, publicOrganizationId, route.path]);
+
+  if (!publicConfiguration || !publicOrganizationId) {
+    return (
+      <div className="site-shell">
+        <header className="public-header content-width"><Brand /></header>
+        <main className="content-width page-section">
+          <EmptyState title="Application unavailable" description="This host is not mapped to an approved Nurture organization. No tenant configuration has been displayed." />
+        </main>
+      </div>
+    );
+  }
+
+  const publicLinks = publicConfiguration.site.navigation;
   const captureHandoff = (event: ReactMouseEvent<HTMLDivElement>) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
     const link = target.closest("a");
     const destination = link?.getAttribute("href");
     if (!destination || !destination.startsWith("/")) return;
-    if (link?.classList.contains("button")) trackPublicEvent("public_primary_cta_selected", { destination });
-    if (destination === "/experience") trackPublicEvent("public_trial_entry_handoff", { destination });
-    else if (destination.startsWith("/offers")) trackPublicEvent("public_offer_handoff", { destination });
-    else if (["/sign-in", "/register"].includes(destination)) trackPublicEvent("public_identity_handoff", { destination });
+    const common = { organizationId: publicOrganizationId, destination };
+    if (link?.classList.contains("button")) trackPublicEvent("public.cta_selected", common);
+    if (destination === "/experience") trackPublicEvent("public.trial_entry_handoff", common);
+    else if (destination.startsWith("/offers")) trackPublicEvent("public.offer_handoff", common);
+    else if (["/sign-in", "/register"].includes(destination)) trackPublicEvent("public.identity_handoff", common);
   };
 
+  const publicStyle = { "--n-accent": publicConfiguration.brand.accentColor } as CSSProperties;
+
   return (
-    <div className="site-shell" onClickCapture={captureHandoff}>
+    <div className="site-shell" onClickCapture={captureHandoff} style={publicStyle}>
       <header className="public-header content-width">
-        <Brand />
-        <nav aria-label="Primary">{publicLinks.slice(0, 4).map(([label, href]) => <Link key={href} href={href}>{label}</Link>)}</nav>
+        <ConfiguredBrand configuration={publicConfiguration} />
+        <nav aria-label="Primary">{publicLinks.slice(0, 4).map((item) => <Link key={item.id} href={item.href}>{item.label}</Link>)}</nav>
         <div className="header-actions">
           <Link href="/sign-in">Sign In</Link>
           <Link className="button button-small" href="/register">Create Account</Link>
           <details className="mobile-public-menu">
             <summary aria-label="Open navigation">Menu</summary>
             <div>
-              {publicLinks.map(([label, href]) => <Link key={href} href={href}>{label}</Link>)}
-              <Link href="/privacy">Privacy</Link><Link href="/terms">Terms</Link>
+              {publicLinks.map((item) => <Link key={item.id} href={item.href}>{item.label}</Link>)}
+              <Link href={publicConfiguration.site.privacyHref}>Privacy</Link>
+              <Link href={publicConfiguration.site.termsHref}>Terms</Link>
             </div>
           </details>
         </div>
@@ -58,11 +68,10 @@ export function PublicShell({ children }: { children: ReactNode }) {
       <main>{children}</main>
       <footer className="public-footer">
         <div className="content-width footer-grid">
-          <div><Brand /><p>One foundation for the entire customer lifecycle.</p></div>
-          <div><h3>Product</h3>{publicLinks.slice(0, 4).map(([label, href]) => <Link key={href} href={href}>{label}</Link>)}</div>
-          <div><h3>Company</h3>{publicLinks.slice(4).map(([label, href]) => <Link key={href} href={href}>{label}</Link>)}</div>
-          <div><h3>Trust</h3><Link href="/privacy">Privacy</Link><Link href="/terms">Terms</Link><Link href="/help">Support</Link></div>
-          <div><h3>Account</h3><Link href="/sign-in">Sign In</Link><Link href="/register">Create Account</Link></div>
+          <div><ConfiguredBrand configuration={publicConfiguration} /><p>{publicConfiguration.site.footerTagline}</p><small>{publicConfiguration.site.copyrightText}</small></div>
+          <div><h3>Explore</h3>{publicLinks.map((item) => <Link key={item.id} href={item.href}>{item.label}</Link>)}</div>
+          <div><h3>Trust</h3><Link href={publicConfiguration.site.privacyHref}>Privacy</Link><Link href={publicConfiguration.site.termsHref}>Terms</Link><Link href="/help">Support</Link></div>
+          <div><h3>Account</h3><Link href="/sign-in">Sign In</Link><Link href="/register">Create Account</Link>{publicConfiguration.site.contactEmail ? <Link href={`mailto:${publicConfiguration.site.contactEmail}`}>Contact</Link> : null}</div>
         </div>
       </footer>
     </div>
@@ -135,6 +144,7 @@ const orgNav: Array<[string, string, OrganizationCapability]> = [
   ["Overview", "", "workspace.view"],
   ["Dashboard", "/dashboard", "workspace.view"],
   ["Profile", "/profile", "profile.manage"],
+  ["Brand & Site", "/brand-site", "settings.manage"],
   ["Team & Access", "/members", "members.view"],
   ["Roles", "/roles", "roles.manage"],
   ["Invitations", "/invitations", "members.manage"],
@@ -173,7 +183,7 @@ export function OrganizationShell({ children, organizationId }: { children: Reac
         <header className="app-topbar"><span>Organization administration</span><div className="scope-actions"><Badge tone="accent">Organization scope</Badge><Link href="/app/account">Account</Link></div></header>
         <main className="app-content">{children}</main>
         <nav className="mobile-nav org-mobile-nav" aria-label="Mobile organization administration">
-          {[["Dashboard", "/dashboard"], ["Contacts", "/contacts"], ["Sequences", "/sequences"], ["Surveys", "/surveys"], ["Settings", "/settings"]].map(([label, suffix]) => {
+          {[["Dashboard", "/dashboard"], ["Brand & Site", "/brand-site"], ["Contacts", "/contacts"], ["Surveys", "/surveys"], ["Settings", "/settings"]].map(([label, suffix]) => {
             const href = `${base}${suffix}`;
             return <Link key={href} href={href} className={route.path === href ? "active" : ""}>{label}</Link>;
           })}
