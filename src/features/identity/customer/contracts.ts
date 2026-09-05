@@ -14,23 +14,21 @@ export interface CustomerScopeSource {
 }
 
 /**
- * Release 1 profile resolution for an unscoped Nurture customer. An
- * organization-scoped Customer is a different trusted mapping and must not be
- * synthesized from a browser-supplied organization ID.
+ * Resolve the stable Nurture Customer identifier attached to a registered
+ * Firebase identity. `organizationId` is contextual scope for downstream
+ * Experience/billing/entitlement records; it does not alter or authorize the
+ * Customer identifier and must still be verified independently by the trusted
+ * organization/capability boundary.
  *
- * The shape is intentionally compatible with Track B's ExperienceCustomerSource.
+ * The shape is intentionally compatible with Track B's ExperienceCustomerSource
+ * and Track D consumes the same stored customerId from identityCustomers/{uid}.
  */
 export const customerScopeSource: CustomerScopeSource = {
   async resolveCustomer(request) {
-    if (request.organizationId) {
-      return {
-        status: "unavailable",
-        reason: "A trusted organization-scoped Customer mapping is required for this organization.",
-      };
-    }
     const profile = await customerProfileRepository.get(request.identityId);
-    return profile
-      ? { status: "ready", customerId: profile.customerId }
-      : { status: "unavailable", reason: "The Nurture customer profile is not available." };
+    if (!profile || profile.status !== "active") {
+      return { status: "unavailable", reason: "The Nurture customer profile is not available." };
+    }
+    return { status: "ready", customerId: profile.customerId };
   },
 };
