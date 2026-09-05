@@ -4,27 +4,29 @@ import type Stripe from "stripe";
 import { db } from "../firebase.js";
 import { getStripeClient, stripeSecretKey, stripeWebhookSecret } from "./config.js";
 import {
+  isPermanentBillingEventError,
   isStaleProviderEvent,
+  permanentBillingEvent,
   subscriptionLifecycleEvent,
   type ProviderEventRecord,
   type StoredSubscription,
 } from "./model.js";
 import {
   billingCustomerRef,
-  offerRef,
   providerEventRef,
+  resolveOfferVersionForSubscription,
   subscriptionRef,
 } from "./store.js";
 import { subscriptionSnapshotFromStripe } from "./stripe-adapter.js";
 
 function requiredMetadata(metadata: Stripe.Metadata, key: string) {
   const value = metadata[key]?.trim();
-  if (!value) throw new Error(`Stripe metadata is missing ${key}.`);
+  if (!value) return permanentBillingEvent(`Stripe metadata is missing ${key}.`);
   return value;
 }
 
 function stripeCustomerId(customer: string | Stripe.Customer | Stripe.DeletedCustomer | null) {
-  if (!customer) throw new Error("Stripe object is missing its Customer.");
+  if (!customer) return permanentBillingEvent("Stripe object is missing its Customer.");
   return typeof customer === "string" ? customer : customer.id;
 }
 
@@ -50,23 +52,30 @@ async function rejectProviderEvent(event: Stripe.Event, reason: string) {
 }
 
 async function handleCheckoutCompleted(event: Stripe.Event, session: Stripe.Checkout.Session) {
-  if (session.livemode) throw new Error("Release 1 rejects live-mode Checkout events.");
+  if (session.livemode) return permanentBillingEvent("Release 1 rejects live-mode Checkout events.");
   const organizationId = requiredMetadata(session.metadata ?? {}, "nurtureOrganizationId");
   const customerId = requiredMetadata(session.metadata ?? {}, "nurtureCustomerId");
   const offerId = requiredMetadata(session.metadata ?? {}, "nurtureOfferId");
   const providerCustomerId = stripeCustomerId(session.customer);
 
-  const [mappingSnapshot, offerSnapshot, checkoutSnapshot] = await Promise.all([
+  const [mappingSnapshot, checkoutSnapshot] = await Promise.all([
     billingCustomerRef(organizationId, customerId).get(),
-    offerRef(organizationId, offerId).get(),
     db.collection("organizations").doc(organizationId).collection("billingCheckoutSessions").doc(session.id).get(),
   ]);
   const mapping = mappingSnapshot.data();
-  if (!mappingSnapshot.exists || mapping?.providerCustomerId !== providerCustomerId) throw new Error("Checkout Customer does not match the Nurture billing mapping.");
-  const offerRecord = offerSnapshot.data();
-  if (!offerSnapshot.exists || !offerRecord?.published || offerRecord.published.status !== "published") throw new Error("Checkout Offer is not a published Nurture Offer.");
+  if (!mappingSnapshot.exists || mapping?.providerCustomerId !== providerCustomerId) {
+    return permanentBillingEvent("Checkout Customer does not match the Nurture billing mapping.");
+  }
   const checkout = checkoutSnapshot.data();
-  if (!checkoutSnapshot.exists || checkout?.customerId !== customerId || checkout?.offerId !== offerId) throw new Error("Checkout Session was not initiated by the trusted Nurture billing boundary.");
+  if (!checkoutSnapshot.exists || checkout?.customerId !== customerId || checkout?.offerId !== offerId) {
+    return permanentBillingEvent("Checkout Session was not initiated by the trusted Nurture billing boundary.");
+  }
+  if (session.metadata?.nurtureOfferVersion && Number(session.metadata.nurtureOfferVersion) !== checkout?.offerVersion) {
+    return permanentBillingEvent("Checkout Offer version does not match the trusted checkout record.");
+  }
+  if (session.metadata?.nurtureOfferPriceId && session.metadata.nurtureOfferPriceId !== checkout?.priceId) {
+    return permanentBillingEvent("Checkout local Price does not match the trusted checkout record.");
+  }
 
   const eventRef = providerEventRef(event.id);
   const lifecycleRef = db.collection("organizations").doc(organizationId).collection("lifecycleEvents").doc(`stripe-${event.id}`);
@@ -89,30 +98,55 @@ async function handleCheckoutCompleted(event: Stripe.Event, session: Stripe.Chec
       correlationId: session.id,
       idempotencyKey: `stripe:${event.id}:checkout.completed`,
       dataMode: "test",
-      payload: { provider: "stripe", providerSessionId: session.id },
+      payload: {
+        provider: "stripe",
+        providerSessionId: session.id,
+        offerVersion: checkout?.offerVersion ?? null,
+        offerPriceId: checkout?.priceId ?? null,
+      },
     });
   });
 }
 
-async function handleSubscriptionEvent(event: Stripe.Event, subscription: Stripe.Subscription) {
-  if (subscription.livemode) throw new Error("Release 1 rejects live-mode subscription events.");
+async function currentSubscriptionForEvent(event: Stripe.Event, payload: Stripe.Subscription) {
+  try {
+    // Stripe event timestamps are second-resolution and delivery is unordered.
+    // Re-read current provider state so equal-timestamp or delayed events cannot
+    // regress the Nurture projection.
+    return await getStripeClient().subscriptions.retrieve(payload.id);
+  } catch (error) {
+    const code = (error as { code?: unknown }).code;
+    if (event.type === "customer.subscription.deleted" && code === "resource_missing") return payload;
+    throw error;
+  }
+}
+
+async function handleSubscriptionEvent(event: Stripe.Event, eventSubscription: Stripe.Subscription) {
+  const subscription = await currentSubscriptionForEvent(event, eventSubscription);
+  if (subscription.livemode) return permanentBillingEvent("Release 1 rejects live-mode subscription events.");
   const organizationId = requiredMetadata(subscription.metadata, "nurtureOrganizationId");
   const customerId = requiredMetadata(subscription.metadata, "nurtureCustomerId");
   const offerId = requiredMetadata(subscription.metadata, "nurtureOfferId");
   const providerCustomerId = stripeCustomerId(subscription.customer);
+  if (subscription.items.data.length !== 1) return permanentBillingEvent("Release 1 expects exactly one Stripe subscription item.");
+  const providerPriceId = subscription.items.data[0].price.id;
 
-  const [mappingSnapshot, offerSnapshot] = await Promise.all([
-    billingCustomerRef(organizationId, customerId).get(),
-    offerRef(organizationId, offerId).get(),
-  ]);
+  const mappingSnapshot = await billingCustomerRef(organizationId, customerId).get();
   const mapping = mappingSnapshot.data();
-  if (!mappingSnapshot.exists || mapping?.providerCustomerId !== providerCustomerId) throw new Error("Subscription Customer does not match the Nurture billing mapping.");
-  const record = offerSnapshot.data();
-  if (!offerSnapshot.exists || !record?.published || record.published.status !== "published") throw new Error("Subscription Offer is not a published Nurture Offer.");
+  if (!mappingSnapshot.exists || mapping?.providerCustomerId !== providerCustomerId) {
+    return permanentBillingEvent("Subscription Customer does not match the Nurture billing mapping.");
+  }
 
+  const offer = await resolveOfferVersionForSubscription({
+    organizationId,
+    offerId,
+    providerPriceId,
+    subscriptionCreated: subscription.created,
+    metadataVersion: subscription.metadata.nurtureOfferVersion,
+  });
   const snapshot = subscriptionSnapshotFromStripe({
     subscription,
-    offer: record.published,
+    offer,
     organizationId,
     customerId,
     providerEventId: event.id,
@@ -137,36 +171,40 @@ async function handleSubscriptionEvent(event: Stripe.Event, subscription: Stripe
     const now = new Date().toISOString();
     transaction.set(currentRef, {
       ...snapshot,
-      lastProviderEventCreated: event.created,
+      lastProviderEventCreated: Math.max(previous?.lastProviderEventCreated ?? event.created, event.created),
       updatedAt: now,
     });
     transaction.create(eventRef, providerRecord(event, "processed", {
       organizationId,
       providerSubscriptionId: subscription.id,
     }));
-    transaction.set(lifecycleRef, {
-      eventId: lifecycleRef.id,
-      eventType,
-      schemaVersion: 1,
-      organizationId,
-      subjectId: subscription.id,
-      subjectKind: "subscription",
-      customerId,
-      offerId,
-      occurredAt: new Date(event.created * 1000).toISOString(),
-      receivedAt: now,
-      source: "provider_webhook",
-      correlationId: subscription.id,
-      idempotencyKey: `stripe:${event.id}:${eventType}`,
-      dataMode: "test",
-      payload: {
-        provider: "stripe",
-        status: snapshot.status,
-        billingInterval: snapshot.billingInterval,
-        currency: snapshot.currency,
-        unitAmountMinor: snapshot.unitAmountMinor,
-      },
-    });
+    if (eventType) {
+      transaction.set(lifecycleRef, {
+        eventId: lifecycleRef.id,
+        eventType,
+        schemaVersion: 1,
+        organizationId,
+        subjectId: subscription.id,
+        subjectKind: "subscription",
+        customerId,
+        offerId,
+        occurredAt: new Date(event.created * 1000).toISOString(),
+        receivedAt: now,
+        source: "provider_webhook",
+        correlationId: subscription.id,
+        idempotencyKey: `stripe:${event.id}:${eventType}`,
+        dataMode: "test",
+        payload: {
+          provider: "stripe",
+          offerVersion: snapshot.offerVersion,
+          offerPriceId: snapshot.offerPriceId,
+          status: snapshot.status,
+          billingInterval: snapshot.billingInterval,
+          currency: snapshot.currency,
+          unitAmountMinor: snapshot.unitAmountMinor,
+        },
+      });
+    }
   });
 }
 
@@ -188,13 +226,8 @@ export const stripeBillingWebhook = onRequest(
       return;
     }
 
-    if (event.livemode) {
-      await rejectProviderEvent(event, "Release 1 accepts Stripe test-mode webhooks only.");
-      response.status(200).send("Rejected live-mode event.");
-      return;
-    }
-
     try {
+      if (event.livemode) permanentBillingEvent("Release 1 accepts Stripe test-mode webhooks only.");
       if (event.type === "checkout.session.completed") {
         await handleCheckoutCompleted(event, event.data.object as Stripe.Checkout.Session);
       } else if (
@@ -207,10 +240,29 @@ export const stripeBillingWebhook = onRequest(
       response.status(200).send("ok");
     } catch (error) {
       const reason = error instanceof Error ? error.message : "Unknown reconciliation error.";
-      // Scope/provider mismatches are permanent for the signed payload. Record a
-      // rejection and acknowledge it so retries cannot manufacture access.
-      await rejectProviderEvent(event, reason);
-      response.status(200).send("Rejected invalid billing event.");
+      if (isPermanentBillingEventError(error)) {
+        try {
+          await rejectProviderEvent(event, reason);
+          response.status(200).send("Rejected invalid billing event.");
+        } catch (recordError) {
+          logger.error("Could not persist Stripe rejection; request will be retried", {
+            eventId: event.id,
+            eventType: event.type,
+            reason: recordError instanceof Error ? recordError.message : "unknown",
+          });
+          response.status(500).send("Billing reconciliation retry required.");
+        }
+        return;
+      }
+
+      // Firestore/Stripe/network failures are not permanent properties of the
+      // signed event. Return a retryable status so Stripe does not drop state.
+      logger.error("Transient Stripe billing reconciliation failure", {
+        eventId: event.id,
+        eventType: event.type,
+        reason,
+      });
+      response.status(500).send("Billing reconciliation retry required.");
     }
   },
 );
