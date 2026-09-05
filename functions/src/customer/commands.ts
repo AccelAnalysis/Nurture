@@ -1,4 +1,6 @@
 import { HttpsError, onCall, type CallableRequest } from "firebase-functions/v2/https";
+import { updateOrganizationCustomerProfile } from "./profile.js";
+import { parseUpdateOrganizationCustomerProfileCommand } from "./profile-validation.js";
 import { captureLead, completeOnboarding, ensureOrganizationCustomer, getCustomerConsents, getOrganizationCustomer, setCustomerConsent, startOnboarding, type VerifiedCustomerPrincipal } from "./store.js";
 import { parseCaptureLeadCommand, parseCompleteOnboardingStepCommand, parseDataMode, parseEnsureCustomerCommand, parseOrganizationId, parseSetConsentCommand, parseStartOnboardingCommand } from "./validation.js";
 
@@ -15,6 +17,7 @@ export const r2EnsureOrganizationCustomer = onCall(async (request) => ensureOrga
 export const r2GetOrganizationCustomer = onCall(async (request) => {
   const source = objectData(request.data); return getOrganizationCustomer(parseOrganizationId(source.organizationId), String(source.customerId ?? ""), parseDataMode(source.dataMode), principalFromRequest(request));
 });
+export const r2UpdateOrganizationCustomerProfile = onCall(async (request) => updateOrganizationCustomerProfile(parseUpdateOrganizationCustomerProfileCommand(request.data), principalFromRequest(request)));
 export const r2SetCustomerConsent = onCall(async (request) => setCustomerConsent(parseSetConsentCommand(request.data), principalFromRequest(request)));
 export const r2GetCustomerConsents = onCall(async (request) => {
   const source = objectData(request.data); return getCustomerConsents(parseOrganizationId(source.organizationId), String(source.customerId ?? ""), parseDataMode(source.dataMode), principalFromRequest(request));
