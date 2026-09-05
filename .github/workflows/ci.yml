@@ -23,6 +23,12 @@ jobs:
         with:
           node-version: 24
 
+      - name: Setup Java for Firebase emulators
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
       - name: Install web dependencies
         run: npm install --no-audit --no-fund
 
@@ -52,6 +58,9 @@ jobs:
       - name: Test Functions
         working-directory: functions
         run: npm test
+
+      - name: Firestore rules and durable backend acceptance
+        run: npm run test:firestore-acceptance
 
       - name: Install browser
         run: npx playwright install --with-deps chromium

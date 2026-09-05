@@ -25,6 +25,10 @@ export {
   r2StartOnboarding,
   r2UpdateOrganizationCustomerProfile,
 } from "./customer/commands.js";
+export {
+  listCustomerWorkspace,
+  getCustomerWorkspaceDetail,
+} from "./customer/workspace-admin.js";
 
 export {
   getCommunicationSenderReadiness,
@@ -38,11 +42,20 @@ export { sendGridEventWebhook } from "./communications/webhook.js";
 
 export {
   appendLifecycleEvent,
-  projectLifecycleEvent,
   recordExperienceMilestone,
-} from "./lifecycle/backend.js";
-
+} from "./lifecycle/callables.js";
 export {
-  drainAcquisitionJobs,
-  enrollAcquisitionFromLifecycle,
-} from "./acquisition/backend.js";
+  processLifecycleEvent,
+  appendCommunicationLifecycleEvent,
+} from "./lifecycle/handlers.js";
+export {
+  listLifecycleCustomerSummaries,
+  getLifecycleCustomerSummary,
+  getLifecycleCustomerTimeline,
+  getLifecycleAutomationWorkspace,
+  saveLifecycleAutomationDraft,
+  publishLifecycleAutomationDraft,
+  getAcquisitionOperations,
+  setOrganizationAcquisitionPause,
+} from "./lifecycle/admin.js";
+export { drainAcquisitionJobs } from "./acquisition/worker.js";
