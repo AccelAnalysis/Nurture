@@ -200,7 +200,7 @@ function VerificationPage({ firebaseUser, customerId, returnTo, isDemo }: {
 }
 
 function AuthFrame({ children }: { children: ReactNode }) {
-  return <main className="auth-shell"><Link className="brand" href="/"><img src="/brand/logo/nurture-n.svg" alt="" /><span>Nurture</span></Link><section className="auth-card-wrap">{children}</section></main>;
+  return <main className="auth-shell"><Link className="brand" href="/"><img src="/brand/logo/nurture-n-glass.png" alt="" /><span>Nurture</span></Link><section className="auth-card-wrap">{children}</section></main>;
 }
 
 export function InvitationPage({ invitationId }: { invitationId: string }) {
