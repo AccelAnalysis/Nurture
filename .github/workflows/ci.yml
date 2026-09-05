@@ -21,11 +21,23 @@ jobs:
         with:
           node-version: 24
 
-      - name: Install dependencies
+      - name: Install web dependencies
         run: npm install --no-audit --no-fund
 
-      - name: Typecheck
+      - name: Typecheck web
         run: npm run typecheck
 
-      - name: Build
+      - name: Build web
         run: npm run build
+
+      - name: Install Functions dependencies
+        working-directory: functions
+        run: npm install --no-audit --no-fund
+
+      - name: Typecheck Functions
+        working-directory: functions
+        run: npm run typecheck
+
+      - name: Test Functions
+        working-directory: functions
+        run: npm test
