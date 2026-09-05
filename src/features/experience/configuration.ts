@@ -1,6 +1,7 @@
 import type {
   Experience,
   ExperienceDefinitionSource,
+  ExperienceOrganizationSource,
   ExperienceSlot,
   JsonObject,
 } from "./contracts";
@@ -45,6 +46,23 @@ export interface TrackAConfigurationExtensionWriter extends TrackAConfigurationE
     organizationId: string,
     extensionKey: string,
   ): unknown | Promise<unknown>;
+}
+
+/**
+ * Concrete public-tenant composition for Track A. The callback should read the
+ * current `ConfigurationProvider.publicOrganizationId`; authenticated scope
+ * continues to come from the selected organization context.
+ */
+export function createTrackAExperienceOrganizationSource(
+  getPublicOrganizationId: () => string | null,
+): ExperienceOrganizationSource {
+  return {
+    resolveOrganizationId({ accessMode, authenticatedOrganizationId }) {
+      return accessMode === "authenticated"
+        ? authenticatedOrganizationId ?? null
+        : getPublicOrganizationId();
+    },
+  };
 }
 
 export function experienceConfigurationExtensionKey(
