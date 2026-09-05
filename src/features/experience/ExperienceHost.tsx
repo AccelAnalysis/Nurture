@@ -1,13 +1,15 @@
 import { Component, useEffect, useMemo, useState, type ErrorInfo, type ReactNode } from "react";
 import { Badge, Button, EmptyState, LoadingState, PageHeader } from "../../components/ui";
 import { useOrganization } from "../../context/OrganizationContext";
-import { Link } from "../../router";
+import { Link, navigate } from "../../router";
 import { useAuth } from "../identity/auth";
 import { ParticipantStateView } from "../participant/ParticipantStateView";
 import { resolveExperienceCapability } from "./access";
 import type {
   EntitlementSnapshotResult,
+  Experience,
   ExperienceAccessMode,
+  ExperienceCustomerResult,
   ExperienceLifecycleEvent,
   ExperienceModule,
   ExperienceModuleRenderContext,
@@ -15,7 +17,7 @@ import type {
   JsonObject,
 } from "./contracts";
 import { SharedExperienceMedia } from "./media";
-import { createRegisteredExperience, getExperienceRegistration } from "./registry";
+import { createRegisteredExperience, getExperienceRegistration, validateExperienceConfiguration } from "./registry";
 import { createExperienceEventId, useExperienceRuntime } from "./runtime";
 import "./experience.css";
 
@@ -53,6 +55,12 @@ class ExperienceModuleBoundary extends Component<ExperienceModuleBoundaryProps, 
   }
 }
 
+type PublishedExperienceState =
+  | "loading"
+  | { status: "ready"; experience: Experience }
+  | { status: "unavailable"; reason: string }
+  | { status: "error"; reason: string };
+
 function normalizeRelativePath(path = "") {
   return path.replace(/^\/+|\/+$/g, "");
 }
@@ -73,15 +81,21 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
   const runtime = useExperienceRuntime();
   const [module, setModule] = useState<ExperienceModule | null>(null);
   const [moduleError, setModuleError] = useState<string | null>(null);
+  const [publishedExperience, setPublishedExperience] = useState<PublishedExperienceState>("loading");
+  const [customerResult, setCustomerResult] = useState<ExperienceCustomerResult | "loading">("loading");
   const [entitlementResult, setEntitlementResult] = useState<EntitlementSnapshotResult | "loading">("loading");
   const normalizedPath = normalizeRelativePath(relativePath);
   const authenticated = accessMode === "authenticated" && Boolean(currentUser);
   const organizationId = accessMode === "authenticated" ? currentOrganizationId ?? undefined : undefined;
+  const experience = publishedExperience !== "loading" && publishedExperience.status === "ready"
+    ? publishedExperience.experience
+    : null;
+  const customerId = customerResult !== "loading" && customerResult.status === "ready"
+    ? customerResult.customerId
+    : undefined;
 
-  const experience = useMemo(
-    () => registration ? createRegisteredExperience(registration, organizationId ?? null) : null,
-    [organizationId, registration],
-  );
+  const locale = useMemo(() => navigator.language || "en-US", []);
+  const timeZone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", []);
 
   useEffect(() => {
     let cancelled = false;
@@ -104,14 +118,91 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
 
   useEffect(() => {
     let cancelled = false;
+    if (!registration) {
+      setPublishedExperience({ status: "unavailable", reason: `No trusted Experience module is registered for the ${slot} slot.` });
+      return;
+    }
+
+    if (!runtime.definitionSource) {
+      setPublishedExperience({ status: "ready", experience: createRegisteredExperience(registration, organizationId ?? null) });
+      return;
+    }
+
+    setPublishedExperience("loading");
+    runtime.definitionSource.loadPublishedExperience({
+      organizationId,
+      slot,
+      moduleId: registration.id,
+      moduleVersion: registration.moduleVersion,
+    }).then((loaded) => {
+      if (cancelled) return;
+      if (!loaded) {
+        setPublishedExperience({ status: "unavailable", reason: "No published Experience configuration is available for this scope." });
+        return;
+      }
+      if (loaded.slot !== slot || loaded.moduleId !== registration.id || loaded.moduleVersion !== registration.moduleVersion) {
+        setPublishedExperience({ status: "error", reason: "The published Experience does not match the trusted module registration." });
+        return;
+      }
+      if (organizationId && loaded.organizationId !== organizationId) {
+        setPublishedExperience({ status: "error", reason: "The published Experience belongs to a different organization scope." });
+        return;
+      }
+      if (loaded.status !== "published") {
+        setPublishedExperience({ status: "unavailable", reason: "This Experience is not currently published." });
+        return;
+      }
+      setPublishedExperience({ status: "ready", experience: loaded });
+    }).catch((reason: unknown) => {
+      if (!cancelled) setPublishedExperience({
+        status: "error",
+        reason: reason instanceof Error ? reason.message : "Published Experience configuration could not be loaded.",
+      });
+    });
+    return () => { cancelled = true; };
+  }, [organizationId, registration, runtime.definitionSource, slot]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!currentUser || accessMode !== "authenticated") {
+      setCustomerResult({ status: "unavailable", reason: "No authenticated customer context is expected in this access mode." });
+      return;
+    }
+    setCustomerResult("loading");
+    runtime.customerSource.resolveCustomer({
+      organizationId,
+      identityId: currentUser.uid,
+    }).then((result) => {
+      if (!cancelled) setCustomerResult(result);
+    }).catch((reason: unknown) => {
+      if (!cancelled) setCustomerResult({
+        status: "unavailable",
+        reason: reason instanceof Error ? reason.message : "Customer/profile identity could not be resolved.",
+      });
+    });
+    return () => { cancelled = true; };
+  }, [accessMode, currentUser, organizationId, runtime.customerSource]);
+
+  useEffect(() => {
+    let cancelled = false;
     if (!experience || !currentUser || accessMode !== "authenticated") {
       setEntitlementResult({ status: "unavailable", reason: "No authenticated customer entitlement context is available in this access mode." });
       return;
     }
+    if (customerResult === "loading") {
+      setEntitlementResult("loading");
+      return;
+    }
+    if (customerResult.status !== "ready") {
+      setEntitlementResult({ status: "unavailable", reason: "Trusted Customer resolution is required before entitlement lookup." });
+      return;
+    }
+
     setEntitlementResult("loading");
     runtime.entitlementSource.loadPresentationSnapshot({
       organizationId,
       identityId: currentUser.uid,
+      customerId: customerResult.customerId,
       experienceId: experience.id,
       moduleId: experience.moduleId,
     }).then((result) => {
@@ -123,12 +214,11 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
       });
     });
     return () => { cancelled = true; };
-  }, [accessMode, currentUser, experience, organizationId, runtime.entitlementSource]);
+  }, [accessMode, currentUser, customerResult, experience, organizationId, runtime.entitlementSource]);
 
   const trustedSnapshot = entitlementResult !== "loading" && entitlementResult.status === "ready"
     ? entitlementResult.snapshot
     : undefined;
-  const customerId = trustedSnapshot?.customerId;
 
   const submitHostEvent = (eventType: string, properties: JsonObject = {}, idempotencyKey?: string) => {
     if (!experience || !module) return;
@@ -153,16 +243,39 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
 
   useEffect(() => {
     if (!module || !experience) return;
-    submitHostEvent("experience.started", { accessMode, slot });
-    // The event intentionally represents a browser-observed start, not a verified milestone.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [module, experience?.id, accessMode, slot]);
+    const event: ExperienceLifecycleEvent = {
+      eventId: createExperienceEventId(),
+      eventType: "experience.started",
+      occurredAt: new Date().toISOString(),
+      source: "experience-browser",
+      trust: "browser-observed",
+      schemaVersion: 1,
+      organizationId,
+      identityId: currentUser?.uid,
+      customerId,
+      experienceId: experience.id,
+      moduleId: module.manifest.id,
+      moduleVersion: module.manifest.version,
+      properties: { accessMode, slot },
+    };
+    void runtime.eventSink.submit(event);
+  }, [accessMode, currentUser?.uid, customerId, experience, module, organizationId, runtime.eventSink, slot]);
 
   if (!registration) {
     return <ParticipantStateView state="unavailable" title="Experience unavailable" description={`No trusted Experience module is registered for the ${slot} slot.`} />;
   }
   if (moduleError) return <ParticipantStateView state="error" description={moduleError} />;
-  if (!module || !experience) return <LoadingState label="Loading Experience…" />;
+  if (publishedExperience === "loading" || !module) return <LoadingState label="Loading Experience…" />;
+  if (publishedExperience.status === "error") return <ParticipantStateView state="error" description={publishedExperience.reason} />;
+  if (publishedExperience.status === "unavailable") {
+    return <ParticipantStateView state="unavailable" title="Experience unavailable" description={publishedExperience.reason} />;
+  }
+  if (!experience) return <ParticipantStateView state="error" description="The Experience host could not resolve a published Experience." />;
+
+  const configurationErrors = validateExperienceConfiguration(module.manifest, experience);
+  if (configurationErrors.length > 0) {
+    return <ParticipantStateView state="error" description={`Published Experience configuration is invalid: ${configurationErrors.join(" ")}`} />;
+  }
 
   const route = module.manifest.routes.find((item) => normalizeRelativePath(item.path) === normalizedPath);
   if (!route) {
@@ -172,7 +285,7 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
   const routeRequiresEntitlement = route.capability
     ? module.manifest.capabilities.find((capability) => capability.key === route.capability)?.requiresEntitlement === true
     : false;
-  if (routeRequiresEntitlement && entitlementResult === "loading") {
+  if (routeRequiresEntitlement && (customerResult === "loading" || entitlementResult === "loading")) {
     return <LoadingState label="Checking Experience access…" />;
   }
 
@@ -195,8 +308,7 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
         description={needsAuthentication ? "This module destination is available after authentication." : "This destination is not exposed in the current Experience mode."}
         action={needsAuthentication ? <Button onClick={() => {
           sessionStorage.setItem("nurture-experience-return-path", moduleHref(basePath(slot, "authenticated"), normalizedPath));
-          window.history.pushState({}, "", "/register");
-          window.dispatchEvent(new Event("nurture:navigate"));
+          navigate("/register");
         }}>Create account</Button> : undefined}
       />
     );
@@ -213,8 +325,7 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
           action={authenticationRequired
             ? <Button onClick={() => {
                 sessionStorage.setItem("nurture-experience-return-path", moduleHref(basePath(slot, "authenticated"), normalizedPath));
-                window.history.pushState({}, "", "/register");
-                window.dispatchEvent(new Event("nurture:navigate"));
+                navigate("/register");
               }}>Create account</Button>
             : <Link className="button" href={`${accessMode === "authenticated" ? "/app/offers" : "/offers"}?capability=${encodeURIComponent(route.capability)}`}>Review access options</Link>}
         />
@@ -231,6 +342,8 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
     configuration: experience.configuration,
     accessMode,
     authenticated,
+    locale,
+    timeZone,
     organizationId,
     identityId: currentUser?.uid,
     customerId,
@@ -240,13 +353,11 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
         ? returnPath
         : moduleHref(basePath(slot, "authenticated"), normalizedPath);
       sessionStorage.setItem("nurture-experience-return-path", safeReturnPath);
-      window.history.pushState({}, "", "/register");
-      window.dispatchEvent(new Event("nurture:navigate"));
+      navigate("/register");
     },
     requestUpgrade(capabilityKey) {
       const destination = accessMode === "authenticated" ? "/app/offers" : "/offers";
-      window.history.pushState({}, "", `${destination}?capability=${encodeURIComponent(capabilityKey)}`);
-      window.dispatchEvent(new Event("nurture:navigate"));
+      navigate(`${destination}?capability=${encodeURIComponent(capabilityKey)}`);
     },
     submitEvent(name, properties = {}, idempotencyKey) {
       const definition = module.manifest.eventDefinitions.find((item) => item.name === name);
@@ -254,13 +365,31 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
       submitHostEvent(name, properties, idempotencyKey);
       return true;
     },
+    completeOnboardingStep(stepId, result) {
+      const declared = module.manifest.onboardingRequirements.some((item) => item.id === stepId);
+      if (!declared) return Promise.resolve({ status: "unavailable", reason: "The module did not declare this onboarding step." });
+      return runtime.onboardingBridge.completeStep({
+        experienceId: experience.id,
+        moduleId: module.manifest.id,
+        stepId,
+        result,
+      });
+    },
     renderMedia(asset) {
       return <SharedExperienceMedia asset={asset} />;
+    },
+    reportRecoverableError(code, safeContext) {
+      void runtime.recoverableErrorReporter.report({
+        code,
+        experienceId: experience.id,
+        moduleId: module.manifest.id,
+        safeContext,
+      });
     },
   };
 
   return (
-    <section className="experience-host" aria-labelledby="experience-title">
+    <section className="experience-host" aria-label={module.manifest.name}>
       <PageHeader
         eyebrow={`${slot === "primary" ? "Primary" : "Secondary"} Experience · ${accessMode}`}
         title={module.manifest.name}
@@ -276,7 +405,15 @@ export function ExperienceHost({ slot, accessMode, relativePath = "" }: Experien
           })}
         </nav>
       ) : null}
-      <ExperienceModuleBoundary onError={(error) => submitHostEvent("experience.module_error", { message: error.message.slice(0, 160) })}>
+      <ExperienceModuleBoundary onError={(error) => {
+        submitHostEvent("experience.module_error", { message: error.message.slice(0, 160) });
+        void runtime.recoverableErrorReporter.report({
+          code: "experience.module_render_error",
+          experienceId: experience.id,
+          moduleId: module.manifest.id,
+          safeContext: { message: error.message.slice(0, 160) },
+        });
+      }}>
         <div className="experience-module-surface">{module.render(context)}</div>
       </ExperienceModuleBoundary>
     </section>
