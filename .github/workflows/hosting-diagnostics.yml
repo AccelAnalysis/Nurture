@@ -1,0 +1,50 @@
+name: Hosting diagnostics
+on:
+  push:
+    branches: [ops/release-1-hosting-verification]
+    paths: [.github/workflows/hosting-diagnostics.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Inspect public HTTPS and DNS
+        shell: bash
+        run: |
+          mkdir -p /tmp/hosting-evidence
+          for host in nurture-12398.web.app nurture.accelanalysis.com; do
+            echo "=== $host ==="
+            dig +short "$host" A
+            dig +short "$host" CNAME
+            dig +short "$host" TXT
+            curl --silent --show-error --max-time 25 -D "/tmp/hosting-evidence/$host-root-headers.txt" "https://$host/" -o "/tmp/hosting-evidence/$host-root.html"
+            cat "/tmp/hosting-evidence/$host-root-headers.txt"
+            head -c 1500 "/tmp/hosting-evidence/$host-root.html"; echo
+            curl --silent --show-error --max-time 25 -D "/tmp/hosting-evidence/$host-release-headers.txt" "https://$host/release.json" -o "/tmp/hosting-evidence/$host-release.txt"
+            cat "/tmp/hosting-evidence/$host-release-headers.txt"
+            head -c 1500 "/tmp/hosting-evidence/$host-release.txt"; echo
+          done
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_NURTURE_12398 }}'
+      - name: Read Hosting site metadata
+        shell: bash
+        run: |
+          TOKEN=$(gcloud auth print-access-token)
+          echo "::add-mask::$TOKEN"
+          for resource in projects/nurture-12398/sites projects/nurture-12398/sites/nurture-12398/customDomains sites/nurture-12398/releases; do
+            echo "=== $resource ==="
+            curl --silent --show-error --max-time 25 -H "Authorization: Bearer $TOKEN" "https://firebasehosting.googleapis.com/v1beta1/$resource?pageSize=5" | jq .
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: public-hosting-diagnostics
+          path: /tmp/hosting-evidence
+          retention-days: 7
