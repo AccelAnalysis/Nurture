@@ -49,6 +49,8 @@ export interface DispatchEmailPrerequisites {
   testAllowlisted?: boolean;
   /** Test execution keeps the real lead/customer subject in history while applying the controlled-test recipient gate. */
   eligibilityRecipientKind?: "customer" | "lead" | "test";
+  /** Trusted final-recheck mismatch that must be persisted as a suppression rather than returned only in memory. */
+  forcedSuppressionReason?: string;
 }
 
 export interface DispatchEmailResult {
@@ -139,6 +141,18 @@ export async function dispatchEmail(
   const persisted = await createMessageIntent(intent);
   let record = persisted.record;
   if (!persisted.created && !canAttemptExisting(record)) return { record, submitted: false };
+
+  if (prerequisites.forcedSuppressionReason) {
+    record = await updateMessageRecord(command.organizationId, record.intent.messageId, {
+      status: "suppressed",
+      statusReason: prerequisites.forcedSuppressionReason,
+    }, {
+      eventType: "communication.suppressed",
+      source: "trusted_server",
+      reason: prerequisites.forcedSuppressionReason,
+    });
+    return { record, submitted: false };
+  }
 
   const [template, sender, suppression] = await Promise.all([
     getPublishedCommunicationTemplate(command.organizationId, command.templateId, command.templateVersion),
