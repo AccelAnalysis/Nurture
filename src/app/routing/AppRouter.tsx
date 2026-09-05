@@ -10,6 +10,7 @@ import { ConfiguredPublicHome } from "../../features/configuration/ConfiguredPub
 import { PublicOrganizationScope } from "../../features/configuration/ConfigurationProvider";
 import { CustomerWorkspaceDetailPage, CustomerWorkspaceListPage } from "../../features/customer-workspace";
 import { ExperienceHost } from "../../features/experience/ExperienceHost";
+import { ExperienceRetentionHost } from "../../features/experience/ExperienceRetentionHost";
 import { AuthenticatedRoute, IdentityRouteBoundary, isIdentityRoute, OnboardingCompleteRoute } from "../../features/identity/IdentityBoundary";
 import { useAuth } from "../../features/identity/auth";
 import { LifecycleConfigurationPage } from "../../features/lifecycle-admin";
@@ -130,9 +131,9 @@ export function AppRouter() {
 
   if (first === "app") {
     const participantContent = second === "experience"
-      ? <ExperienceHost slot="primary" accessMode="authenticated" relativePath={route.segments.slice(2).join("/")} />
+      ? <ExperienceRetentionHost slot="primary" accessMode="authenticated" relativePath={route.segments.slice(2).join("/")} />
       : second === "secondary"
-        ? <ExperienceHost slot="secondary" accessMode="authenticated" relativePath={route.segments.slice(2).join("/")} />
+        ? <ExperienceRetentionHost slot="secondary" accessMode="authenticated" relativePath={route.segments.slice(2).join("/")} />
         : route.path === "/app/offers" ? <ParticipantOffersPage />
         : route.path === "/app/billing" ? <ParticipantBillingPage />
         : participantRoutes.has(route.path)
