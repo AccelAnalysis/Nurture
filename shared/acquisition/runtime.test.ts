@@ -124,6 +124,7 @@ class Email implements AcquisitionEmailDispatchPort {
 class Store implements AcquisitionRuntimeStore {
   enrollments = new Map<string, AcquisitionEnrollment>();
   jobs = new Map<string, AcquisitionJob>();
+  reservationPurpose = new Map<string, AcquisitionMessagePurpose>();
   platformPaused = false;
   organizationPaused = false;
   automationPaused = false;
@@ -194,10 +195,40 @@ class Store implements AcquisitionRuntimeStore {
   async markProviderSubmissionStarted(input: MarkProviderSubmissionStartedInput): Promise<AcquisitionJob> {
     const job = this.jobs.get(input.jobId);
     if (!job || job.status !== "leased" || job.lease?.leaseToken !== input.leaseToken) throw new Error("lease-lost");
+
+    const admission = input.frequencyAdmission;
+    const reservedOrAccepted = [...this.jobs.values()].filter((candidate) => {
+      if (candidate.jobId === job.jobId) return false;
+      if (
+        candidate.organizationId !== admission.organizationId
+        || candidate.subjectId !== admission.subjectId
+        || candidate.dataMode !== admission.dataMode
+        || this.reservationPurpose.get(candidate.jobId) !== admission.purpose
+      ) return false;
+      const acceptedInsideWindow = candidate.status === "provider-accepted"
+        && Date.parse(candidate.updatedAt) >= Date.parse(admission.since);
+      const reservedInsideWindow = Boolean(candidate.providerSubmissionStartedAt)
+        && Date.parse(candidate.providerSubmissionStartedAt!) >= Date.parse(admission.since)
+        && candidate.status !== "failed"
+        && candidate.status !== "suppressed"
+        && candidate.status !== "cancelled"
+        && candidate.status !== "retrying";
+      return acceptedInsideWindow || reservedInsideWindow;
+    }).length;
+
+    if (reservedOrAccepted >= admission.maxProviderAcceptedEffects) {
+      job.status = "suppressed";
+      job.lease = undefined;
+      job.updatedAt = input.at;
+      job.lastExplanation = { at: input.at, reason: "frequency-cap-reached" };
+      return structuredClone(job);
+    }
+
     job.providerAttemptCount += 1;
     job.providerSubmissionStartedAt = input.at;
     job.providerSubmissionAttemptId = input.attemptId;
     job.updatedAt = input.at;
+    this.reservationPurpose.set(job.jobId, admission.purpose);
     return structuredClone(job);
   }
 
@@ -212,6 +243,11 @@ class Store implements AcquisitionRuntimeStore {
     if (input.providerAttemptCount !== undefined) job.providerAttemptCount = input.providerAttemptCount;
     if (input.providerMessageId !== undefined) job.providerMessageId = input.providerMessageId;
     if (input.providerRequestId !== undefined) job.providerRequestId = input.providerRequestId;
+    if (input.clearProviderSubmissionMarker) {
+      delete job.providerSubmissionStartedAt;
+      delete job.providerSubmissionAttemptId;
+      this.reservationPurpose.delete(job.jobId);
+    }
     return structuredClone(job);
   }
 
@@ -235,6 +271,7 @@ class Store implements AcquisitionRuntimeStore {
       job.organizationId === input.organizationId
       && job.subjectId === input.subjectId
       && job.dataMode === input.dataMode
+      && this.reservationPurpose.get(job.jobId) === input.purpose
       && job.status === "provider-accepted"
       && Date.parse(job.updatedAt) >= Date.parse(input.since)).length;
   }
@@ -357,7 +394,7 @@ function event(overrides: Partial<LifecycleEventEnvelope> = {}): LifecycleEventE
   };
 }
 
-function zeroDelayDefinition() {
+function zeroDelayDefinition(overrides: Partial<AcquisitionAutomationDefinition> = {}) {
   return definition({
     steps: [{
       stepId: "recovery-1",
@@ -369,6 +406,7 @@ function zeroDelayDefinition() {
         purpose: "marketing",
       },
     }],
+    ...overrides,
   });
 }
 
@@ -501,6 +539,56 @@ describe("durable dispatch admission", () => {
     });
   });
 
+  it("rechecks current definition enablement before dispatch", async () => {
+    const fx = fixture(zeroDelayDefinition());
+    await fx.runtime.enroll({ event: event() });
+    fx.definitions.definition = { ...fx.definitions.definition, enabled: false };
+    expect((await fx.runtime.drain({ workerId: "disabled-before-send" })).cancelled).toBe(1);
+    expect(fx.email.submissions).toHaveLength(0);
+    expect([...fx.store.jobs.values()][0]?.lastExplanation.reason).toBe("definition-disabled");
+  });
+
+  it("atomically reserves frequency capacity before either parallel worker can submit", async () => {
+    const fx = fixture(zeroDelayDefinition({ frequencyPolicy: { maxProviderAcceptedEffects: 1, windowSeconds: 86_400 } }));
+    await fx.runtime.enroll({ event: event() });
+    await fx.runtime.enroll({ event: event({ eventId: "checkout-event-2", correlationId: "checkout-correlation-2", idempotencyKey: "checkout-idempotency-2" }) });
+    const jobs = [...fx.store.jobs.values()];
+    expect(jobs).toHaveLength(2);
+
+    const firstLease = await fx.store.tryLeaseJob({
+      jobId: jobs[0]!.jobId,
+      workerId: "parallel-a",
+      leaseToken: "lease-a",
+      leasedAt: fx.clock.now(),
+      leaseExpiresAt: new Date(Date.parse(fx.clock.now()) + 120_000).toISOString(),
+    });
+    const secondLease = await fx.store.tryLeaseJob({
+      jobId: jobs[1]!.jobId,
+      workerId: "parallel-b",
+      leaseToken: "lease-b",
+      leasedAt: fx.clock.now(),
+      leaseExpiresAt: new Date(Date.parse(fx.clock.now()) + 120_000).toISOString(),
+    });
+    expect(firstLease.status).toBe("leased");
+    expect(secondLease.status).toBe("leased");
+
+    const frequencyAdmission = {
+      organizationId: "org-a",
+      subjectId: "customer-1",
+      dataMode: "test" as const,
+      purpose: "marketing" as const,
+      since: "2026-09-04T13:00:00.000Z",
+      maxProviderAcceptedEffects: 1,
+    };
+    const [first, second] = await Promise.all([
+      fx.store.markProviderSubmissionStarted({ jobId: jobs[0]!.jobId, leaseToken: "lease-a", at: fx.clock.now(), attemptId: "attempt-a", frequencyAdmission }),
+      fx.store.markProviderSubmissionStarted({ jobId: jobs[1]!.jobId, leaseToken: "lease-b", at: fx.clock.now(), attemptId: "attempt-b", frequencyAdmission }),
+    ]);
+    expect([first.status, second.status].sort()).toEqual(["leased", "suppressed"]);
+    expect([first, second].filter((job) => job.providerSubmissionStartedAt)).toHaveLength(1);
+    expect([first, second].find((job) => job.status === "suppressed")?.lastExplanation.reason).toBe("frequency-cap-reached");
+  });
+
   it("stops purchase, pause, opt-out, and unknown-state cases before provider submission", async () => {
     const purchase = fixture();
     await purchase.runtime.enroll({ event: event() });
@@ -550,6 +638,7 @@ describe("durable dispatch admission", () => {
     ];
     await retry.runtime.enroll({ event: event() });
     expect((await retry.runtime.drain({ workerId: "retry-1" })).retrying).toBe(1);
+    expect([...retry.store.jobs.values()][0]?.providerSubmissionStartedAt).toBeUndefined();
     retry.clock.advance(10);
     expect((await retry.runtime.drain({ workerId: "retry-2" })).providerAccepted).toBe(1);
     expect(retry.email.submissions).toHaveLength(2);
@@ -584,6 +673,14 @@ describe("durable dispatch admission", () => {
       leaseToken: "killed-lease",
       at: fx.clock.now(),
       attemptId: "attempt-before-kill",
+      frequencyAdmission: {
+        organizationId: job.organizationId,
+        subjectId: job.subjectId,
+        dataMode: job.dataMode,
+        purpose: "marketing",
+        since: "2026-09-04T13:00:00.000Z",
+        maxProviderAcceptedEffects: 2,
+      },
     });
     fx.clock.advance(121);
     expect((await createAcquisitionRuntime(fx.dependencies).drain({ workerId: "recovery-worker" })).unknownOutcome).toBe(1);
