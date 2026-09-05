@@ -20,7 +20,7 @@ test("SendGrid signature verification uses timestamp plus raw body", () => {
   assert.equal(verifySendGridEventWebhookSignature({ ...fixture, signatureBase64: fixture.signature, rawBody: Buffer.from("[]") }), false);
 });
 
-test("provider events map to distinct delivery outcomes", () => {
+test("provider events map to distinct delivery outcomes and suppression scopes", () => {
   assert.equal(mapSendGridEvent("delivered").nextStatus, "delivered");
   assert.equal(mapSendGridEvent("bounce").nextStatus, "bounced");
   assert.equal(mapSendGridEvent("dropped").nextStatus, "dropped");
@@ -28,6 +28,15 @@ test("provider events map to distinct delivery outcomes", () => {
   assert.equal(mapSendGridEvent("unsubscribe").nextStatus, "unsubscribed");
   assert.equal(mapSendGridEvent("deferred").nextStatus, "deferred");
   assert.equal(mapSendGridEvent("processed").nextStatus, undefined);
+
+  const unsubscribe = mapSendGridEvent("unsubscribe");
+  assert.equal(unsubscribe.suppressGlobally, true);
+  assert.equal(unsubscribe.suppressOrganizationMarketing, false);
+
+  const group = mapSendGridEvent("group_unsubscribe");
+  assert.equal(group.nextStatus, "unsubscribed");
+  assert.equal(group.suppressGlobally, false);
+  assert.equal(group.suppressOrganizationMarketing, true);
 });
 
 test("late provider callbacks cannot regress stronger delivery knowledge", () => {
