@@ -277,7 +277,13 @@ export type AcquisitionEmailEligibilityResult =
       reason?: string;
     }
   | {
-      status: "hold" | "suppress";
+      status: "hold";
+      checkedAt: string;
+      reason: string;
+      code?: "sender-not-ready" | "test-recipient-not-allowlisted" | "consent" | "suppression" | "recipient-unavailable" | "unknown";
+    }
+  | {
+      status: "suppress";
       checkedAt: string;
       reason: string;
       code?: "sender-not-ready" | "test-recipient-not-allowlisted" | "consent" | "suppression" | "recipient-unavailable" | "unknown";
