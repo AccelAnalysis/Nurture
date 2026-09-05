@@ -50,13 +50,17 @@ export type SubscriptionStatus =
 /**
  * Track D's commercial handoff to the entitlement owner. This snapshot is
  * written from trusted provider reconciliation, never from a checkout return
- * URL or browser-supplied status.
+ * URL or browser-supplied status. The exact immutable Offer version and local
+ * price are retained so later Offer publication cannot change existing access
+ * semantics or prevent cancellation/payment-state reconciliation.
  */
 export interface SubscriptionSnapshot {
   id: string;
   organizationId: string;
   customerId: string;
   offerId: string;
+  offerVersion: number;
+  offerPriceId: string;
   provider: PaymentProvider;
   providerCustomerId: string;
   providerSubscriptionId: string;
