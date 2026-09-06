@@ -25,7 +25,7 @@ In particular, this branch deliberately avoids editing the existing `Communicati
 | Dedicated client SMS number provisioning | Organization Messaging Service, local number discovery, number purchase and sender-pool association implemented |
 | A2P/10DLC client registration | Organization A2P business profile, Compliance Embeddable brand/campaign initialization and campaign status refresh implemented server-side |
 | Incoming SMS/reply routing | Signed Twilio inbound webhook and server-only organization sender routes implemented |
-| STOP/START/HELP processing | Implemented with organization-scoped transport suppression; START never manufactures lifecycle marketing/service consent |
+| STOP/START/HELP processing | Implemented with organization-scoped transport suppression and provider-authoritative reserved-keyword handling; START never manufactures lifecycle marketing/service consent |
 | International sender-ID strategy | Organization alphanumeric Sender ID registration, optional destination-country activation and Messaging Service sender selection implemented |
 | Browser administration | Typed callable client exists; visual composition deliberately held until R6 Track C lands |
 | Live provider acceptance | Not claimed; requires production provider credentials, callback origin, DNS, sender resources and Twilio compliance access |
@@ -82,10 +82,13 @@ The persisted inbound record is intentionally an infrastructure/conversation fac
 1. Nurture creates an organization-specific Twilio Messaging Service.
 2. Nurture discovers and purchases an SMS-capable local number and attaches it to that service.
 3. Nurture persists number/service routing server-side so inbound STOP/START/HELP remains routable even while US outbound use is still pending A2P approval.
-4. The outbound `TwilioSmsAdapter` requires `sender.status == ready`, trusted organization context and no carrier-level opt-out before submission.
+4. The outbound `TwilioSmsAdapter` requires `sender.status == ready`, trusted organization context and no Nurture carrier-level opt-out before submission.
 5. Twilio inbound callbacks are HMAC-signature verified before tenant routing.
-6. STOP creates an organization-scoped carrier transport suppression. START clears only that transport suppression. HELP returns organization-branded support guidance.
-7. Normal inbound replies are persisted under the resolved organization for later customer/conversation projection.
+6. When Advanced Opt-Out supplies `OptOutType`, Nurture treats Twilio's STOP/START/HELP classification as authoritative. Otherwise Nurture recognizes only an exact reserved-keyword message as its local fallback; conversational strings such as `STOP please` are not treated as STOP.
+7. STOP creates an organization-scoped transport suppression. START clears only that transport suppression. Normal inbound replies and compliance events are persisted under the resolved organization.
+8. The webhook returns empty TwiML for reserved keywords and does not send a second confirmation. Twilio's built-in/Advanced Opt-Out layer remains the carrier block-list and compliance-reply authority.
+
+Twilio currently exposes Advanced Opt-Out configuration only in its Console, not through an API. Therefore Nurture can automate Messaging Service/number/A2P provisioning but cannot currently automate the client-branded STOP/START/HELP confirmation text. For clients that require branded compliance replies, real-provider onboarding must enable Advanced Opt-Out on the organization's Messaging Service and configure the organization's branded keyword responses in Twilio Console. This limitation is provider-controlled, not an R6 dependency.
 
 ## US A2P/10DLC flow
 
@@ -98,6 +101,8 @@ The branch provides server endpoints to:
 - initialize a campaign inquiry bound to the organization's Messaging Service;
 - refresh the Messaging Service's campaign status;
 - mark the US sender `ready` only after provider approval, or `blocked` after rejection.
+
+New A2P campaigns are blocked before provider submission unless the organization has both a public HTTPS Privacy Policy URL and a public HTTPS Terms & Conditions URL, reflecting Twilio's current June 30, 2026+ registration requirement. The campaign initializer also requires a valid Twilio `BN...` Brand Registration SID and reads campaign state from the provider's `compliance[]` response rather than assuming the list wrapper itself contains the status.
 
 The short-lived Compliance Embeddable session token is returned to the authenticated organization administrator and is not stored as a long-lived Nurture credential.
 
@@ -160,10 +165,12 @@ Trusted adapter:
 
 The Functions gate now covers:
 
-- canonical STOP/START/HELP classification;
+- exact reserved-message STOP/START/HELP classification;
 - E.164, country and domain normalization;
 - alphanumeric sender validation;
-- Twilio signature payload construction and tamper rejection;
+- Twilio signature payload construction, tamper rejection and signed organization status routing;
+- provider-authoritative Advanced Opt-Out type parsing;
+- current A2P policy-URL and `BN...` brand-SID prerequisites;
 - SendGrid inbound multipart text-field parsing;
 - attachment file-part exclusion from the inbound text persistence path.
 
@@ -191,7 +198,9 @@ A green unit/build pipeline is not proof that a client can yet send live branded
 - deployed `COMMUNICATION_WEBHOOK_BASE_URL` matching callback signature validation;
 - client-owned DNS records for sending, link and inbound domains;
 - Twilio ISV/Reseller Trust Hub eligibility for Compliance Embeddable;
+- public Privacy Policy and Terms & Conditions URLs for each new US A2P campaign;
 - a test organization with approved A2P registration for US 10DLC traffic;
+- Advanced Opt-Out configured in Twilio Console when client-branded STOP/START/HELP replies are required;
 - explicit test recipients/phone numbers and no assumption that provider acceptance equals human delivery or engagement.
 
 ## Pre-merge hardening note
