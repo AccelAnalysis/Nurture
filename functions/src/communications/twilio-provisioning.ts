@@ -30,7 +30,7 @@ export async function provisionTwilioSmsNumber(input: {
     FriendlyName: friendlyName,
     InboundRequestUrl: `${webhookBase}/twilioInboundSms`,
     InboundMethod: "POST",
-    StatusCallback: `${webhookBase}/twilioMessageStatus`,
+    StatusCallback: `${webhookBase}/twilioMessageStatus?organizationId=${encodeURIComponent(input.organizationId)}`,
     StickySender: true,
     SmartEncoding: true,
   });
@@ -151,9 +151,13 @@ export async function initializeTwilioA2pCampaignInquiry(input: {
 }) {
   if (!input.sender.messagingServiceSid) throw new Error("A2P campaign registration requires an organization Messaging Service.");
   const value = input.registration;
+  if (!value.privacyPolicyUrl || !value.termsAndConditionsUrl) {
+    throw new Error("A2P campaign registration requires public HTTPS Privacy Policy and Terms & Conditions URLs.");
+  }
+  const brandRegistrationSid = requireTwilioSid(input.a2pBrandRegistrationSid, "BN", "A2P Brand Registration SID");
   const samples = (value.sampleMessages ?? []).filter(Boolean).slice(0, 5);
   const body: Record<string, unknown> = {
-    a2pBrandRegistrationSid: input.a2pBrandRegistrationSid,
+    a2pBrandRegistrationSid: brandRegistrationSid,
     messagingServiceSid: input.sender.messagingServiceSid,
     useCaseDescription: value.messagingUseCase ?? "Organization customer lifecycle and account communications managed through Nurture.",
     useCaseOptInTypes: ["WEB_FORM"],
@@ -164,9 +168,9 @@ export async function initializeTwilioA2pCampaignInquiry(input: {
     optOutMessageSample: value.optOutMessageSample ?? `${value.brandName}: You are unsubscribed from SMS. Reply START to resume where permitted.`,
     helpKeywords: ["HELP", "INFO"],
     helpMessageSample: value.helpMessageSample ?? `${value.brandName}: Reply STOP to opt out. Contact the organization for support.`,
+    privacyPolicyUrl: value.privacyPolicyUrl,
+    termsAndConditionsUrl: value.termsAndConditionsUrl,
   };
-  if (value.privacyPolicyUrl) body.privacyPolicyUrl = value.privacyPolicyUrl;
-  if (value.termsAndConditionsUrl) body.termsAndConditionsUrl = value.termsAndConditionsUrl;
   samples.forEach((sample, index) => { body[`useCaseSampleMessage${index + 1}`] = sample.slice(0, 1_024); });
   const { data } = await twilioJson("https://trusthub.twilio.com/v1/A2PCampaignRegistrations", body);
   return complianceInquiry(data);
@@ -175,10 +179,12 @@ export async function initializeTwilioA2pCampaignInquiry(input: {
 export async function getTwilioA2pCampaignStatus(messagingServiceSid: string) {
   requireTwilioSid(messagingServiceSid, "MG", "Messaging Service SID");
   const { data } = await twilioRequest(`https://messaging.twilio.com/v1/Services/${messagingServiceSid}/Compliance/Usa2p`, { method: "GET" });
-  const status = typeof data.campaign_status === "string" ? data.campaign_status.toUpperCase() : "UNKNOWN";
+  const compliance = Array.isArray(data.compliance) ? data.compliance.map(objectRecord) : [];
+  const current = compliance.find((item) => typeof item.campaign_status === "string") ?? data;
+  const status = typeof current.campaign_status === "string" ? current.campaign_status.toUpperCase() : "UNKNOWN";
   const registrationStatus: OrganizationA2pRegistration["status"] =
     status === "VERIFIED" || status === "APPROVED" ? "approved" :
-      status === "FAILED" || status === "REJECTED" ? "rejected" :
+      status === "FAILED" || status === "REJECTED" || status === "SUSPENDED" ? "rejected" :
         status === "IN_PROGRESS" || status === "IN_REVIEW" ? "in-review" : "submitted";
-  return { providerStatus: status, registrationStatus, response: data };
+  return { providerStatus: status, registrationStatus, response: current };
 }
