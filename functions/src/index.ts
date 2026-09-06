@@ -38,7 +38,24 @@ export {
   saveCommunicationTemplate,
   sendCommunicationTest,
 } from "./communications/admin.js";
+export {
+  beginOrganizationA2pBrandInquiry,
+  beginOrganizationA2pCampaignInquiry,
+  configureOrganizationAlphaSender,
+  configureOrganizationEmailDomain,
+  configureOrganizationInboundEmail,
+  configureOrganizationLinkDomain,
+  getBrandedCommunicationInfrastructureAdmin,
+  refreshOrganizationA2pCampaignStatus,
+  saveOrganizationA2pRegistrationDraft,
+  validateOrganizationEmailDomain,
+  validateOrganizationInboundEmail,
+  validateOrganizationLinkDomain,
+} from "./communications/branded-admin.js";
+export { provisionOrganizationSmsNumberConfirmed as provisionOrganizationSmsNumber } from "./communications/sms-admin.js";
 export { sendGridEventWebhook } from "./communications/webhook.js";
+export { sendGridInboundEmail } from "./communications/inbound-email.js";
+export { twilioInboundSms, twilioMessageStatus } from "./communications/sms-webhook.js";
 
 export {
   appendLifecycleEvent,
