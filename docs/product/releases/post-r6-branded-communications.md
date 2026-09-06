@@ -2,6 +2,7 @@
 
 Status: implementation branch, hold for reconciliation after Release 6 promotion
 Branch: `post-r6/branded-communications`
+Draft PR: #48
 
 This track extends Nurture's existing Release 2 email communications foundation so organizations can operate lifecycle communications under their own brand identity across email and SMS.
 
