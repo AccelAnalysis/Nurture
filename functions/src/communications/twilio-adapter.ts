@@ -9,6 +9,7 @@ import {
 } from "../../../shared/platform/integrations.js";
 import { getOrganizationSmsSender, getSmsCarrierPreference, hashPhoneNumber } from "./branded-store.js";
 import { normalizeE164 } from "./branded-types.js";
+import { getCommunicationWebhookBaseUrl } from "./config.js";
 import { getTwilioCredentials, twilioForm } from "./twilio-client.js";
 
 function meta(context: IntegrationRequestContext, providerRequestId?: string): IntegrationMeta {
@@ -22,6 +23,10 @@ function providerError(error: unknown) {
     providerCode: typeof value?.providerCode === "string" ? value.providerCode : undefined,
     message: value instanceof Error ? value.message : "Twilio request failed.",
   };
+}
+
+export function organizationSmsStatusCallbackUrl(organizationId: string) {
+  return `${getCommunicationWebhookBaseUrl()}/twilioMessageStatus?organizationId=${encodeURIComponent(organizationId)}`;
 }
 
 export class TwilioSmsAdapter implements SmsIntegrationPort {
@@ -50,6 +55,7 @@ export class TwilioSmsAdapter implements SmsIntegrationPort {
       const { data } = await twilioForm(`https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`, {
         To: to,
         Body: request.body,
+        StatusCallback: organizationSmsStatusCallbackUrl(request.organizationId),
         ...(sender.messagingServiceSid ? { MessagingServiceSid: sender.messagingServiceSid } : sender.phoneNumber ? { From: normalizeE164(sender.phoneNumber) } : {}),
       });
       const providerRequestId = typeof data.sid === "string" ? data.sid : undefined;
