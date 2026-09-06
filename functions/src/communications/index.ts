@@ -6,9 +6,27 @@ export {
   saveCommunicationTemplate,
   sendCommunicationTest,
 } from "./admin.js";
+export {
+  beginOrganizationA2pBrandInquiry,
+  beginOrganizationA2pCampaignInquiry,
+  configureOrganizationAlphaSender,
+  configureOrganizationEmailDomain,
+  configureOrganizationInboundEmail,
+  configureOrganizationLinkDomain,
+  getBrandedCommunicationInfrastructureAdmin,
+  provisionOrganizationSmsNumber,
+  refreshOrganizationA2pCampaignStatus,
+  saveOrganizationA2pRegistrationDraft,
+  validateOrganizationEmailDomain,
+  validateOrganizationInboundEmail,
+  validateOrganizationLinkDomain,
+} from "./branded-admin.js";
 export { sendGridEventWebhook } from "./webhook.js";
+export { sendGridInboundEmail } from "./inbound-email.js";
+export { twilioInboundSms, twilioMessageStatus } from "./sms-webhook.js";
 export { dispatchEmail, type DispatchEmailCommand, type DispatchEmailPrerequisites } from "./service.js";
 export { getSendGridEmailAdapter, SendGridEmailAdapter } from "./sendgrid-adapter.js";
+export { getTwilioSmsAdapter, TwilioSmsAdapter } from "./twilio-adapter.js";
 export {
   adaptCurrentConsent,
   createAcquisitionEmailDispatchAdapter,
