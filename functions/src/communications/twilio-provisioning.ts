@@ -61,7 +61,9 @@ export async function provisionTwilioSmsNumber(input: {
   });
 
   const at = new Date().toISOString();
-  const usLongCode = countryCode === "US";
+  const reason = countryCode === "US"
+    ? "US long-code outbound messaging remains blocked until organization A2P 10DLC registration is approved."
+    : `The ${countryCode} number is provisioned, but outbound messaging remains blocked until country-specific regulatory requirements are verified.`;
   return {
     organizationId: input.organizationId,
     provider: "twilio",
@@ -70,8 +72,8 @@ export async function provisionTwilioSmsNumber(input: {
     phoneNumberSid,
     phoneNumber,
     countryCode,
-    status: usLongCode ? "pending" : "ready",
-    ...(usLongCode ? { reason: "US long-code outbound messaging remains blocked until organization A2P 10DLC registration is approved." } : { verifiedAt: at }),
+    status: "pending",
+    reason,
     updatedAt: at,
   };
 }
@@ -164,7 +166,7 @@ export async function initializeTwilioA2pCampaignInquiry(input: {
     useCaseOptInDescription: value.optInDescription ?? "Customers grant purpose-specific SMS consent in the organization's Nurture-powered registration or preference experience before any promotional messaging is sent.",
     optInKeywords: ["START", "SUBSCRIBE"],
     optInMessageSample: `${value.brandName}: SMS transport is enabled. Your communication consent settings still apply. Reply STOP to opt out.`,
-    optOutKeywords: ["STOP", "STOPALL", "UNSUBSCRIBE", "CANCEL", "END", "QUIT"],
+    optOutKeywords: ["STOP", "STOPALL", "UNSUBSCRIBE", "CANCEL", "END", "QUIT", "REVOKE", "OPTOUT"],
     optOutMessageSample: value.optOutMessageSample ?? `${value.brandName}: You are unsubscribed from SMS. Reply START to resume where permitted.`,
     helpKeywords: ["HELP", "INFO"],
     helpMessageSample: value.helpMessageSample ?? `${value.brandName}: Reply STOP to opt out. Contact the organization for support.`,
