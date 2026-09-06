@@ -195,11 +195,11 @@ export async function provisionSendGridInboundEmail(input: { organizationId: str
 
   await sendGridRequest("/v3/user/webhooks/parse/settings", {
     method: "POST",
-    body: JSON.stringify({ hostname, url: webhookUrl, spam_check: true, send_raw: true }),
+    body: JSON.stringify({ hostname, url: webhookUrl, spam_check: true, send_raw: false }),
   });
   await sendGridRequest(`/v3/user/webhooks/parse/settings/${encodeURIComponent(hostname)}`, {
     method: "PATCH",
-    body: JSON.stringify({ url: webhookUrl, spam_check: true, send_raw: true, security_policy: policyId }),
+    body: JSON.stringify({ url: webhookUrl, spam_check: true, send_raw: false, security_policy: policyId }),
   });
   const at = new Date().toISOString();
   return {
