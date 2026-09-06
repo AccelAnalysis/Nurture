@@ -14,13 +14,13 @@ export {
   configureOrganizationInboundEmail,
   configureOrganizationLinkDomain,
   getBrandedCommunicationInfrastructureAdmin,
-  provisionOrganizationSmsNumber,
   refreshOrganizationA2pCampaignStatus,
   saveOrganizationA2pRegistrationDraft,
   validateOrganizationEmailDomain,
   validateOrganizationInboundEmail,
   validateOrganizationLinkDomain,
 } from "./branded-admin.js";
+export { provisionOrganizationSmsNumberConfirmed as provisionOrganizationSmsNumber } from "./sms-admin.js";
 export { sendGridEventWebhook } from "./webhook.js";
 export { sendGridInboundEmail } from "./inbound-email.js";
 export { twilioInboundSms, twilioMessageStatus } from "./sms-webhook.js";
