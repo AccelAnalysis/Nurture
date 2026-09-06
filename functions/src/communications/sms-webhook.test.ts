@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import test from "node:test";
-import { twilioSignaturePayload, verifyTwilioWebhookSignature } from "./sms-webhook.js";
+import { twilioOptOutType, twilioSignaturePayload, verifyTwilioWebhookSignature } from "./sms-webhook.js";
 
 test("Twilio webhook signature payload sorts form keys", () => {
   assert.equal(
@@ -28,4 +28,12 @@ test("Twilio status signature binds the organization route in the callback URL",
   const signature = createHmac("sha1", authToken).update(twilioSignaturePayload(organizationAUrl, params), "utf8").digest("base64");
   assert.equal(verifyTwilioWebhookSignature({ authToken, signature, url: organizationAUrl, params }), true);
   assert.equal(verifyTwilioWebhookSignature({ authToken, signature, url: organizationBUrl, params }), false);
+});
+
+test("Advanced Opt-Out type is accepted only for provider-defined compliance events", () => {
+  assert.equal(twilioOptOutType("stop"), "STOP");
+  assert.equal(twilioOptOutType(" START "), "START");
+  assert.equal(twilioOptOutType("HELP"), "HELP");
+  assert.equal(twilioOptOutType("CANCEL"), undefined);
+  assert.equal(twilioOptOutType(undefined), undefined);
 });
