@@ -66,8 +66,8 @@ export interface OrganizationSmsSender {
   phoneNumberSid?: string;
   phoneNumber?: string;
   alphaSenderId?: string;
-  /** Explicit E.164 calling-code prefixes for destinations where this sender may be selected. */
-  alphaAllowedCallingCodes?: string[];
+  /** Explicit ISO-3166-1 alpha-2 destinations for organization-managed alpha sender activation. */
+  alphaAllowedCountryCodes?: string[];
   countryCode?: string;
   status: ProvisioningStatus;
   verifiedAt?: string;
@@ -88,6 +88,8 @@ export interface OrganizationA2pRegistration {
   businessType?: string;
   businessIndustry?: string;
   website: string;
+  privacyPolicyUrl?: string;
+  termsAndConditionsUrl?: string;
   countryCode: string;
   contactEmail?: string;
   contactPhone?: string;
@@ -98,6 +100,8 @@ export interface OrganizationA2pRegistration {
   messagingUseCase?: string;
   optInDescription?: string;
   sampleMessages?: string[];
+  helpMessageSample?: string;
+  optOutMessageSample?: string;
   providerCustomerProfileSid?: string;
   providerTrustProductSid?: string;
   providerBrandSid?: string;
@@ -136,12 +140,18 @@ export function classifySmsComplianceKeyword(body: string): SmsComplianceKeyword
 }
 
 export function isValidAlphaSenderId(value: string) {
-  return /^[A-Za-z0-9 ]{1,11}$/.test(value) && /[A-Za-z]/.test(value);
+  return /^[A-Za-z0-9 +_&-]{1,11}$/.test(value) && /[A-Za-z]/.test(value);
 }
 
 export function normalizeE164(value: string) {
   const normalized = value.replace(/[\s().-]/g, "");
   if (!/^\+[1-9]\d{7,14}$/.test(normalized)) throw new Error("Phone number must be valid E.164.");
+  return normalized;
+}
+
+export function normalizeCountryCode(value: string) {
+  const normalized = value.trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(normalized)) throw new Error("Country code must be ISO-3166-1 alpha-2.");
   return normalized;
 }
 
