@@ -27,3 +27,7 @@ This work intentionally does not modify or redefine Release 6-owned ecosystem co
 ## Existing foundation reused
 
 This work preserves the current organization-scoped communication templates, sender readiness, consent evaluation, suppressions, SendGrid outbound delivery, provider webhooks, lifecycle outbox, and audit model. New infrastructure must plug into those seams rather than create a parallel communication engine.
+
+## First implementation slice
+
+The branch now establishes provider-neutral branded communication types for organization email domains, branded link domains, SMS senders, A2P registration state, inbound routes, E.164 normalization, alphanumeric sender validation, and STOP/START/HELP classification. Subsequent commits wire these contracts to provider APIs and organization-scoped persistence.
