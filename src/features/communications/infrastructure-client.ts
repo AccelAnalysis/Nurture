@@ -123,8 +123,8 @@ export async function validateInboundEmail(organizationId: string) {
   return call<{ organizationId: string }, { inbound: InboundEmailView }>("validateOrganizationInboundEmail", { organizationId });
 }
 
-export async function provisionSmsNumber(input: { organizationId: string; countryCode: string; areaCode?: string }) {
-  return call<typeof input, { sender: SmsSenderView; reused: boolean }>("provisionOrganizationSmsNumber", input);
+export async function provisionSmsNumber(input: { organizationId: string; countryCode: string; areaCode?: string; confirmPurchase: true }) {
+  return call<typeof input, { sender: SmsSenderView; reused: boolean; purchased: boolean }>("provisionOrganizationSmsNumber", input);
 }
 
 export async function configureAlphaSender(input: { organizationId: string; alphaSenderId: string; destinationCountryCode?: string }) {
