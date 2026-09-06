@@ -13,6 +13,8 @@ export interface DnsRecordRequirement {
 export interface OrganizationEmailDomain {
   organizationId: string;
   provider: "sendgrid";
+  rootDomain: string;
+  subdomain: string;
   domain: string;
   fromAddress: string;
   fromName: string;
@@ -29,8 +31,24 @@ export interface OrganizationEmailDomain {
 export interface OrganizationLinkDomain {
   organizationId: string;
   provider: "sendgrid";
+  rootDomain: string;
+  subdomain: string;
   domain: string;
   providerLinkBrandId?: string;
+  status: ProvisioningStatus;
+  dnsRecords: DnsRecordRequirement[];
+  verifiedAt?: string;
+  reason?: string;
+  updatedAt: string;
+}
+
+export interface OrganizationInboundEmail {
+  organizationId: string;
+  provider: "sendgrid";
+  hostname: string;
+  webhookUrl: string;
+  providerSecurityPolicyId?: string;
+  providerPublicKey?: string;
   status: ProvisioningStatus;
   dnsRecords: DnsRecordRequirement[];
   verifiedAt?: string;
@@ -48,6 +66,8 @@ export interface OrganizationSmsSender {
   phoneNumberSid?: string;
   phoneNumber?: string;
   alphaSenderId?: string;
+  /** Explicit E.164 calling-code prefixes for destinations where this sender may be selected. */
+  alphaAllowedCallingCodes?: string[];
   countryCode?: string;
   status: ProvisioningStatus;
   verifiedAt?: string;
@@ -64,8 +84,20 @@ export interface OrganizationA2pRegistration {
   brandName: string;
   businessIdentityType?: string;
   businessRegistrationId?: string;
+  businessRegistrationType?: string;
+  businessType?: string;
+  businessIndustry?: string;
   website: string;
   countryCode: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  street?: string;
+  city?: string;
+  region?: string;
+  postalCode?: string;
+  messagingUseCase?: string;
+  optInDescription?: string;
+  sampleMessages?: string[];
   providerCustomerProfileSid?: string;
   providerTrustProductSid?: string;
   providerBrandSid?: string;
@@ -83,6 +115,14 @@ export interface InboundCommunicationRoute {
   providerMessageId: string;
   body: string;
   receivedAt: string;
+}
+
+export interface SmsCarrierPreference {
+  organizationId: string;
+  recipientHash: string;
+  carrierOptOut: boolean;
+  source: "STOP" | "START" | "provider" | "admin";
+  updatedAt: string;
 }
 
 export type SmsComplianceKeyword = "STOP" | "START" | "HELP" | "NONE";
@@ -103,4 +143,22 @@ export function normalizeE164(value: string) {
   const normalized = value.replace(/[\s().-]/g, "");
   if (!/^\+[1-9]\d{7,14}$/.test(normalized)) throw new Error("Phone number must be valid E.164.");
   return normalized;
+}
+
+export function normalizeDomain(value: string) {
+  const normalized = value.trim().toLowerCase().replace(/\.$/, "");
+  if (normalized.length > 253 || !/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(normalized)) {
+    throw new Error("Domain is invalid.");
+  }
+  return normalized;
+}
+
+export function normalizeDomainLabel(value: string) {
+  const normalized = value.trim().toLowerCase();
+  if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(normalized)) throw new Error("Domain label is invalid.");
+  return normalized;
+}
+
+export function composeSubdomain(rootDomain: string, subdomain: string) {
+  return `${normalizeDomainLabel(subdomain)}.${normalizeDomain(rootDomain)}`;
 }
