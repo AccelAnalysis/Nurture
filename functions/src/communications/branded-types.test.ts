@@ -9,11 +9,13 @@ import {
   normalizeE164,
 } from "./branded-types.js";
 
-test("SMS compliance keywords are canonicalized without granting unrelated consent", () => {
+test("SMS compliance keywords require exact reserved messages", () => {
   assert.equal(classifySmsComplianceKeyword(" stop "), "STOP");
-  assert.equal(classifySmsComplianceKeyword("UNSUBSCRIBE please"), "STOP");
+  assert.equal(classifySmsComplianceKeyword("UNSUBSCRIBE"), "STOP");
+  assert.equal(classifySmsComplianceKeyword("UNSUBSCRIBE please"), "NONE");
   assert.equal(classifySmsComplianceKeyword("start"), "START");
-  assert.equal(classifySmsComplianceKeyword("help me"), "HELP");
+  assert.equal(classifySmsComplianceKeyword("help"), "HELP");
+  assert.equal(classifySmsComplianceKeyword("help me"), "NONE");
   assert.equal(classifySmsComplianceKeyword("How is my order?"), "NONE");
 });
 
