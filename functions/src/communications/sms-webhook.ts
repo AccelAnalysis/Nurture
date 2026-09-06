@@ -40,6 +40,10 @@ function required(value: string | undefined, field: string) {
   return value.trim();
 }
 
+function organizationIdFromQuery(value: unknown) {
+  return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(value) ? value : undefined;
+}
+
 function escapeXml(value: string) {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 }
@@ -120,37 +124,39 @@ export const twilioMessageStatus = onRequest({ secrets: [twilioAuthToken] }, asy
     response.status(405).send("Method not allowed");
     return;
   }
+  const organizationId = organizationIdFromQuery(request.query.organizationId);
+  if (!organizationId) {
+    response.status(400).send("Missing organization route");
+    return;
+  }
   const params = formValues(request);
   const signature = request.header("x-twilio-signature") ?? "";
-  const url = `${getCommunicationWebhookBaseUrl()}/twilioMessageStatus`;
+  const url = `${getCommunicationWebhookBaseUrl()}/twilioMessageStatus?organizationId=${encodeURIComponent(organizationId)}`;
   if (!verifyTwilioWebhookSignature({ authToken: twilioAuthToken.value(), signature, url, params })) {
     response.status(403).send("Invalid webhook signature");
     return;
   }
-  const messageSid = params.MessageSid?.trim();
-  const to = params.To?.trim();
-  const serviceSid = params.MessagingServiceSid?.trim();
-  if (!messageSid || !to) {
+  const messageSid = params.MessageSid?.trim() ?? params.SmsSid?.trim();
+  if (!messageSid || !/^SM[0-9a-fA-F]{32}$/.test(messageSid)) {
     response.status(400).send("Invalid status payload");
     return;
   }
-  let normalizedTo: string;
-  try { normalizedTo = normalizeE164(to); } catch {
-    response.status(400).send("Invalid destination");
-    return;
+
+  // The organization is bound into the signed callback URL. Provider payload
+  // fields are deliberately not used as tenant authority because Twilio may add
+  // or omit status parameters over time.
+  const destination = params.To?.trim();
+  let recipientHash: string | undefined;
+  if (destination) {
+    try { recipientHash = hashPhoneNumber(destination); } catch { recipientHash = undefined; }
   }
-  const route = await resolveSmsInboundOrganization({ to: normalizedTo, ...(serviceSid ? { messagingServiceSid: serviceSid } : {}) });
-  if (!route) {
-    response.status(200).send("Unmatched");
-    return;
-  }
-  await db.collection("organizations").doc(route.organizationId).collection("communicationProviderStatus").doc(`twilio-${messageSid}`).set({
+  await db.collection("organizations").doc(organizationId).collection("communicationProviderStatus").doc(`twilio-${messageSid}`).set({
     provider: "twilio",
     providerMessageId: messageSid,
-    status: typeof params.MessageStatus === "string" ? params.MessageStatus : "unknown",
+    status: typeof params.MessageStatus === "string" ? params.MessageStatus : typeof params.SmsStatus === "string" ? params.SmsStatus : "unknown",
     errorCode: params.ErrorCode || null,
     errorMessage: params.ErrorMessage || null,
-    to: normalizedTo,
+    ...(recipientHash ? { recipientHash } : {}),
     observedAt: new Date().toISOString(),
   }, { merge: true });
   response.status(200).send("OK");
