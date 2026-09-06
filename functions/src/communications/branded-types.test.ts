@@ -12,6 +12,8 @@ import {
 test("SMS compliance keywords require exact reserved messages", () => {
   assert.equal(classifySmsComplianceKeyword(" stop "), "STOP");
   assert.equal(classifySmsComplianceKeyword("UNSUBSCRIBE"), "STOP");
+  assert.equal(classifySmsComplianceKeyword("REVOKE"), "STOP");
+  assert.equal(classifySmsComplianceKeyword("OPTOUT"), "STOP");
   assert.equal(classifySmsComplianceKeyword("UNSUBSCRIBE please"), "NONE");
   assert.equal(classifySmsComplianceKeyword("start"), "START");
   assert.equal(classifySmsComplianceKeyword("help"), "HELP");
