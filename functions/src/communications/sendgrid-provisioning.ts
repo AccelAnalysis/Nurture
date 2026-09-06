@@ -78,6 +78,11 @@ function optionalEmail(value: string | undefined) {
   return normalized;
 }
 
+function withoutReason<T extends { reason?: string }>(value: T): Omit<T, "reason"> {
+  const { reason: _reason, ...rest } = value;
+  return rest;
+}
+
 export async function provisionSendGridEmailDomain(input: {
   organizationId: string;
   rootDomain: string;
@@ -124,11 +129,12 @@ export async function validateSendGridEmailDomain(current: OrganizationEmailDoma
   const valid = response.valid === true;
   const at = new Date().toISOString();
   const validationRecords = dnsRecords(response.validation_results);
+  const base = withoutReason(current);
   return {
-    ...current,
+    ...base,
     status: valid ? "ready" : "pending",
     dnsRecords: validationRecords.length ? validationRecords : current.dnsRecords.map((record) => ({ ...record, valid: valid || record.valid })),
-    ...(valid ? { verifiedAt: at, reason: undefined } : { reason: "DNS authentication records are not verified yet." }),
+    ...(valid ? { verifiedAt: at } : { reason: "DNS authentication records are not verified yet." }),
     updatedAt: at,
   };
 }
@@ -164,11 +170,12 @@ export async function validateSendGridLinkDomain(current: OrganizationLinkDomain
   const valid = response.valid === true;
   const at = new Date().toISOString();
   const validationRecords = dnsRecords(response.validation_results);
+  const base = withoutReason(current);
   return {
-    ...current,
+    ...base,
     status: valid ? "ready" : "pending",
     dnsRecords: validationRecords.length ? validationRecords : current.dnsRecords.map((record) => ({ ...record, valid: valid || record.valid })),
-    ...(valid ? { verifiedAt: at, reason: undefined } : { reason: "Branded-link DNS records are not verified yet." }),
+    ...(valid ? { verifiedAt: at } : { reason: "Branded-link DNS records are not verified yet." }),
     updatedAt: at,
   };
 }
@@ -218,11 +225,12 @@ export async function validateSendGridInboundEmail(current: OrganizationInboundE
     valid = false;
   }
   const at = new Date().toISOString();
+  const base = withoutReason(current);
   return {
-    ...current,
+    ...base,
     status: valid ? "ready" : "pending",
     dnsRecords: current.dnsRecords.map((record) => record.type === "MX" ? { ...record, valid } : record),
-    ...(valid ? { verifiedAt: at, reason: undefined } : { reason: "Inbound MX record is not verified yet." }),
+    ...(valid ? { verifiedAt: at } : { reason: "Inbound MX record is not verified yet." }),
     updatedAt: at,
   };
 }
