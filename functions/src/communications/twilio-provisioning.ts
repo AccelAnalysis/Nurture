@@ -1,4 +1,4 @@
-import { getCommunicationWebhookBaseUrl, twilioAccountSid, twilioAuthToken } from "./config.js";
+import { getCommunicationWebhookBaseUrl } from "./config.js";
 import {
   isValidAlphaSenderId,
   normalizeCountryCode,
@@ -6,63 +6,14 @@ import {
   type OrganizationA2pRegistration,
   type OrganizationSmsSender,
 } from "./branded-types.js";
-
-function object(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
-}
-
-function credentials() {
-  const accountSid = twilioAccountSid.value().trim();
-  const authToken = twilioAuthToken.value().trim();
-  if (!/^AC[0-9a-fA-F]{32}$/.test(accountSid) || !authToken) throw new Error("Twilio server credentials are not configured.");
-  return { accountSid, authToken };
-}
-
-function authorization() {
-  const { accountSid, authToken } = credentials();
-  return `Basic ${Buffer.from(`${accountSid}:${authToken}`, "utf8").toString("base64")}`;
-}
-
-async function twilioRequest(url: string, init: RequestInit) {
-  const response = await fetch(url, {
-    ...init,
-    headers: { authorization: authorization(), ...(init.headers ?? {}) },
-  });
-  const text = await response.text();
-  let data: unknown = {};
-  if (text) {
-    try { data = JSON.parse(text); } catch { data = { message: text.slice(0, 500) }; }
-  }
-  if (!response.ok) {
-    const record = object(data);
-    const message = typeof record.message === "string" ? record.message : `Twilio request failed (${response.status}).`;
-    throw new Error(`Twilio: ${message}`);
-  }
-  return object(data);
-}
-
-async function twilioForm(url: string, values: Record<string, string | number | boolean | undefined>, method = "POST") {
-  const body = new URLSearchParams();
-  for (const [key, value] of Object.entries(values)) if (value !== undefined) body.set(key, String(value));
-  return twilioRequest(url, {
-    method,
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body,
-  });
-}
-
-async function twilioJson(url: string, value: unknown, method = "POST") {
-  return twilioRequest(url, {
-    method,
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(value),
-  });
-}
-
-function requireSid(value: unknown, prefix: string, field: string) {
-  if (typeof value !== "string" || !new RegExp(`^${prefix}[0-9a-fA-F]{32}$`).test(value)) throw new Error(`Twilio did not return a valid ${field}.`);
-  return value;
-}
+import {
+  getTwilioCredentials,
+  objectRecord,
+  requireTwilioSid,
+  twilioForm,
+  twilioJson,
+  twilioRequest,
+} from "./twilio-client.js";
 
 export async function provisionTwilioSmsNumber(input: {
   organizationId: string;
@@ -70,12 +21,12 @@ export async function provisionTwilioSmsNumber(input: {
   countryCode: string;
   areaCode?: string;
 }): Promise<OrganizationSmsSender> {
-  const { accountSid } = credentials();
+  const { accountSid } = getTwilioCredentials();
   const countryCode = normalizeCountryCode(input.countryCode);
   const webhookBase = getCommunicationWebhookBaseUrl();
   const friendlyName = `${input.organizationName.trim() || input.organizationId} via Nurture`.slice(0, 64);
 
-  const service = await twilioForm("https://messaging.twilio.com/v1/Services", {
+  const { data: service } = await twilioForm("https://messaging.twilio.com/v1/Services", {
     FriendlyName: friendlyName,
     InboundRequestUrl: `${webhookBase}/twilioInboundSms`,
     InboundMethod: "POST",
@@ -83,27 +34,27 @@ export async function provisionTwilioSmsNumber(input: {
     StickySender: true,
     SmartEncoding: true,
   });
-  const messagingServiceSid = requireSid(service.sid, "MG", "Messaging Service SID");
+  const messagingServiceSid = requireTwilioSid(service.sid, "MG", "Messaging Service SID");
 
   const params = new URLSearchParams({ SmsEnabled: "true", PageSize: "20" });
   if (input.areaCode?.trim()) {
     if (!/^\d{3,6}$/.test(input.areaCode.trim())) throw new Error("Area code is invalid.");
     params.set("AreaCode", input.areaCode.trim());
   }
-  const available = await twilioRequest(
+  const { data: available } = await twilioRequest(
     `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/AvailablePhoneNumbers/${countryCode}/Local.json?${params.toString()}`,
     { method: "GET" },
   );
   const candidates = Array.isArray(available.available_phone_numbers) ? available.available_phone_numbers : [];
-  const first = candidates.map(object).find((candidate) => typeof candidate.phone_number === "string");
+  const first = candidates.map(objectRecord).find((candidate) => typeof candidate.phone_number === "string");
   if (!first || typeof first.phone_number !== "string") throw new Error(`Twilio has no SMS-capable local number available for ${countryCode}.`);
   const phoneNumber = normalizeE164(first.phone_number);
 
-  const purchased = await twilioForm(
+  const { data: purchased } = await twilioForm(
     `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/IncomingPhoneNumbers.json`,
     { PhoneNumber: phoneNumber, FriendlyName: friendlyName },
   );
-  const phoneNumberSid = requireSid(purchased.sid, "PN", "phone-number SID");
+  const phoneNumberSid = requireTwilioSid(purchased.sid, "PN", "phone-number SID");
 
   await twilioForm(`https://messaging.twilio.com/v1/Services/${messagingServiceSid}/PhoneNumbers`, {
     PhoneNumberSid: phoneNumberSid,
@@ -183,7 +134,8 @@ export async function initializeTwilioA2pBrandInquiry(input: { registration: Org
   if (value.businessRegistrationId) body.businessRegistrationNumber = value.businessRegistrationId;
   if (value.businessIndustry) body.businessIndustry = value.businessIndustry;
   if (value.businessType) body.businessType = value.businessType;
-  return complianceInquiry(await twilioJson("https://trusthub.twilio.com/v1/A2PBrandRegistrations", body));
+  const { data } = await twilioJson("https://trusthub.twilio.com/v1/A2PBrandRegistrations", body);
+  return complianceInquiry(data);
 }
 
 export async function initializeTwilioA2pCampaignInquiry(input: {
@@ -207,16 +159,17 @@ export async function initializeTwilioA2pCampaignInquiry(input: {
   if (value.privacyPolicyUrl) body.privacyPolicyUrl = value.privacyPolicyUrl;
   if (value.termsAndConditionsUrl) body.termsAndConditionsUrl = value.termsAndConditionsUrl;
   samples.forEach((sample, index) => { body[`useCaseSampleMessage${index + 1}`] = sample; });
-  return complianceInquiry(await twilioJson("https://trusthub.twilio.com/v1/A2PCampaignRegistrations", body));
+  const { data } = await twilioJson("https://trusthub.twilio.com/v1/A2PCampaignRegistrations", body);
+  return complianceInquiry(data);
 }
 
 export async function getTwilioA2pCampaignStatus(messagingServiceSid: string) {
-  requireSid(messagingServiceSid, "MG", "Messaging Service SID");
-  const response = await twilioRequest(`https://messaging.twilio.com/v1/Services/${messagingServiceSid}/Compliance/Usa2p`, { method: "GET" });
-  const status = typeof response.campaign_status === "string" ? response.campaign_status.toUpperCase() : "UNKNOWN";
+  requireTwilioSid(messagingServiceSid, "MG", "Messaging Service SID");
+  const { data } = await twilioRequest(`https://messaging.twilio.com/v1/Services/${messagingServiceSid}/Compliance/Usa2p`, { method: "GET" });
+  const status = typeof data.campaign_status === "string" ? data.campaign_status.toUpperCase() : "UNKNOWN";
   const registrationStatus: OrganizationA2pRegistration["status"] =
     status === "VERIFIED" || status === "APPROVED" ? "approved" :
       status === "FAILED" || status === "REJECTED" ? "rejected" :
         status === "IN_PROGRESS" || status === "IN_REVIEW" ? "in-review" : "submitted";
-  return { providerStatus: status, registrationStatus, response };
+  return { providerStatus: status, registrationStatus, response: data };
 }
