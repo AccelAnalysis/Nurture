@@ -16,6 +16,7 @@ import {
 } from "../../../shared/communications/contracts.js";
 import { renderEmailTemplate } from "../../../shared/communications/render.js";
 import { getCommunicationTrustedOrigins, sendGridApiKey } from "./config.js";
+import { getOrganizationEmailReplyTo } from "./email-branding.js";
 import { getEmailSenderReadiness, getPublishedCommunicationTemplate } from "./store.js";
 
 const templateIdSet = new Set<string>(communicationTemplateIds);
@@ -65,9 +66,10 @@ export class SendGridEmailAdapter implements EmailIntegrationPort {
         return integrationFailure({ code: "invalid-request", message: "Feature code cannot bypass the Nurture renderer with an arbitrary subject.", retryable: false }, meta(context));
       }
       const reference = parseCommunicationTemplateReference(request.templateId);
-      const [template, sender] = await Promise.all([
+      const [template, sender, replyTo] = await Promise.all([
         getPublishedCommunicationTemplate(request.organizationId, reference.templateId, reference.version),
         getEmailSenderReadiness(request.organizationId),
+        getOrganizationEmailReplyTo(request.organizationId),
       ]);
       if (!template) return integrationFailure({ code: "not-found", message: "Published communication template version was not found.", retryable: false }, meta(context));
       if (template.purpose !== request.purpose) return integrationFailure({ code: "invalid-request", message: "Requested email purpose does not match the published template.", retryable: false }, meta(context));
@@ -95,6 +97,7 @@ export class SendGridEmailAdapter implements EmailIntegrationPort {
             custom_args: { nurture_correlation: correlationToken(context) },
           }],
           from: { email: sender.fromAddress, name: sender.fromName },
+          ...(replyTo ? { reply_to: { email: replyTo } } : {}),
           subject: rendered.subject,
           content: [
             { type: "text/plain", value: rendered.text },
