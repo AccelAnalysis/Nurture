@@ -122,18 +122,24 @@ function complianceInquiry(response: Record<string, unknown>): ComplianceInquiry
 export async function initializeTwilioA2pBrandInquiry(input: { registration: OrganizationA2pRegistration; brandType: "STANDARD" | "SOLE_PROPRIETOR" }) {
   const value = input.registration;
   if (!value.contactEmail) throw new Error("A2P registration requires a notification email.");
-  const body: Record<string, string> = {
+  const body: Record<string, unknown> = {
     brandType: input.brandType,
     friendlyName: value.brandName,
     notificationEmail: value.contactEmail,
     businessName: value.legalBusinessName,
     businessWebsite: value.website,
-    businessRegistrationCountry: normalizeCountryCode(value.countryCode),
+    businessCountry: normalizeCountryCode(value.countryCode),
   };
   if (value.businessRegistrationType) body.businessRegistrationAuthority = value.businessRegistrationType;
   if (value.businessRegistrationId) body.businessRegistrationNumber = value.businessRegistrationId;
   if (value.businessIndustry) body.businessIndustry = value.businessIndustry;
   if (value.businessType) body.businessType = value.businessType;
+  if (value.street) body.businessStreetAddress = value.street;
+  if (value.city) body.businessCity = value.city;
+  if (value.region) body.businessStateProvinceRegion = value.region;
+  if (value.postalCode) body.businessPostalCode = value.postalCode;
+  if (value.contactEmail) body.businessContactEmail = value.contactEmail;
+  if (value.contactPhone) body.businessContactPhone = normalizeE164(value.contactPhone);
   const { data } = await twilioJson("https://trusthub.twilio.com/v1/A2PBrandRegistrations", body);
   return complianceInquiry(data);
 }
@@ -146,19 +152,22 @@ export async function initializeTwilioA2pCampaignInquiry(input: {
   if (!input.sender.messagingServiceSid) throw new Error("A2P campaign registration requires an organization Messaging Service.");
   const value = input.registration;
   const samples = (value.sampleMessages ?? []).filter(Boolean).slice(0, 5);
-  const body: Record<string, string> = {
+  const body: Record<string, unknown> = {
     a2pBrandRegistrationSid: input.a2pBrandRegistrationSid,
     messagingServiceSid: input.sender.messagingServiceSid,
     useCaseDescription: value.messagingUseCase ?? "Organization customer lifecycle and account communications managed through Nurture.",
-    optInWorkflowDescription: value.optInDescription ?? "Customers grant purpose-specific SMS consent in the organization's Nurture-powered registration or preference experience.",
-    optOutKeywords: "STOP,STOPALL,UNSUBSCRIBE,CANCEL,END,QUIT",
-    optOutMessage: value.optOutMessageSample ?? `${value.brandName}: You are unsubscribed from SMS. Reply START to resume where permitted.`,
-    helpKeywords: "HELP,INFO",
-    helpMessage: value.helpMessageSample ?? `${value.brandName}: Reply STOP to opt out. Contact the organization for support.`,
+    useCaseOptInTypes: ["WEB_FORM"],
+    useCaseOptInDescription: value.optInDescription ?? "Customers grant purpose-specific SMS consent in the organization's Nurture-powered registration or preference experience before any promotional messaging is sent.",
+    optInKeywords: ["START", "SUBSCRIBE"],
+    optInMessageSample: `${value.brandName}: SMS transport is enabled. Your communication consent settings still apply. Reply STOP to opt out.`,
+    optOutKeywords: ["STOP", "STOPALL", "UNSUBSCRIBE", "CANCEL", "END", "QUIT"],
+    optOutMessageSample: value.optOutMessageSample ?? `${value.brandName}: You are unsubscribed from SMS. Reply START to resume where permitted.`,
+    helpKeywords: ["HELP", "INFO"],
+    helpMessageSample: value.helpMessageSample ?? `${value.brandName}: Reply STOP to opt out. Contact the organization for support.`,
   };
   if (value.privacyPolicyUrl) body.privacyPolicyUrl = value.privacyPolicyUrl;
   if (value.termsAndConditionsUrl) body.termsAndConditionsUrl = value.termsAndConditionsUrl;
-  samples.forEach((sample, index) => { body[`useCaseSampleMessage${index + 1}`] = sample; });
+  samples.forEach((sample, index) => { body[`useCaseSampleMessage${index + 1}`] = sample.slice(0, 1_024); });
   const { data } = await twilioJson("https://trusthub.twilio.com/v1/A2PCampaignRegistrations", body);
   return complianceInquiry(data);
 }
