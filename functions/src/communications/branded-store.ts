@@ -165,24 +165,33 @@ export async function saveOrganizationSmsSender(input: OrganizationSmsSender, ac
   await db.runTransaction(async (transaction) => {
     const existing = await transaction.get(target);
     const previous = existing.exists ? existing.data() as OrganizationSmsSender : null;
-    if (previous?.phoneNumber && previous.phoneNumber !== next.phoneNumber) transaction.delete(smsRouteRef("number", normalizeE164(previous.phoneNumber)));
-    if (previous?.messagingServiceSid && previous.messagingServiceSid !== next.messagingServiceSid) transaction.delete(smsRouteRef("service", previous.messagingServiceSid));
+    if (previous?.phoneNumber && (previous.phoneNumber !== next.phoneNumber || next.status === "blocked")) {
+      transaction.delete(smsRouteRef("number", normalizeE164(previous.phoneNumber)));
+    }
+    if (previous?.messagingServiceSid && (previous.messagingServiceSid !== next.messagingServiceSid || next.status === "blocked")) {
+      transaction.delete(smsRouteRef("service", previous.messagingServiceSid));
+    }
     transaction.set(target, next, { merge: false });
-    if (next.phoneNumber && next.status === "ready") {
+
+    // Inbound STOP/START/HELP must remain routable while US outbound messaging is
+    // pending A2P approval. Outbound delivery still independently requires ready.
+    if (next.phoneNumber && next.status !== "blocked") {
       transaction.set(smsRouteRef("number", normalizeE164(next.phoneNumber)), {
         provider: "twilio",
         organizationId: input.organizationId,
         senderIdentity: normalizeE164(next.phoneNumber),
         messagingServiceSid: next.messagingServiceSid ?? null,
+        outboundReady: next.status === "ready",
         updatedAt: at,
       }, { merge: false });
     }
-    if (next.messagingServiceSid && next.status === "ready") {
+    if (next.messagingServiceSid && next.status !== "blocked") {
       transaction.set(smsRouteRef("service", next.messagingServiceSid), {
         provider: "twilio",
         organizationId: input.organizationId,
         senderIdentity: next.phoneNumber ?? next.alphaSenderId ?? next.messagingServiceSid,
         messagingServiceSid: next.messagingServiceSid,
+        outboundReady: next.status === "ready",
         updatedAt: at,
       }, { merge: false });
     }
@@ -228,10 +237,10 @@ export async function getOrganizationA2pRegistration(organizationId: string) {
 export async function resolveSmsInboundOrganization(input: { to: string; messagingServiceSid?: string }) {
   const normalizedTo = normalizeE164(input.to);
   const number = await smsRouteRef("number", normalizedTo).get();
-  if (number.exists) return number.data() as { organizationId: string; senderIdentity: string; messagingServiceSid?: string | null };
+  if (number.exists) return number.data() as { organizationId: string; senderIdentity: string; messagingServiceSid?: string | null; outboundReady?: boolean };
   if (input.messagingServiceSid) {
     const service = await smsRouteRef("service", input.messagingServiceSid).get();
-    if (service.exists) return service.data() as { organizationId: string; senderIdentity: string; messagingServiceSid?: string | null };
+    if (service.exists) return service.data() as { organizationId: string; senderIdentity: string; messagingServiceSid?: string | null; outboundReady?: boolean };
   }
   return null;
 }
