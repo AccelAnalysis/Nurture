@@ -46,13 +46,13 @@ export {
   configureOrganizationInboundEmail,
   configureOrganizationLinkDomain,
   getBrandedCommunicationInfrastructureAdmin,
-  provisionOrganizationSmsNumber,
   refreshOrganizationA2pCampaignStatus,
   saveOrganizationA2pRegistrationDraft,
   validateOrganizationEmailDomain,
   validateOrganizationInboundEmail,
   validateOrganizationLinkDomain,
 } from "./communications/branded-admin.js";
+export { provisionOrganizationSmsNumberConfirmed as provisionOrganizationSmsNumber } from "./communications/sms-admin.js";
 export { sendGridEventWebhook } from "./communications/webhook.js";
 export { sendGridInboundEmail } from "./communications/inbound-email.js";
 export { twilioInboundSms, twilioMessageStatus } from "./communications/sms-webhook.js";
