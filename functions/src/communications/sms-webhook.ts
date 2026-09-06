@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { onRequest } from "firebase-functions/v2/https";
 import { db } from "../firebase.js";
 import { getCommunicationWebhookBaseUrl, twilioAuthToken } from "./config.js";
-import { classifySmsComplianceKeyword, normalizeE164 } from "./branded-types.js";
+import { classifySmsComplianceKeyword, normalizeE164, type SmsComplianceKeyword } from "./branded-types.js";
 import {
   hashPhoneNumber,
   recordInboundCommunication,
@@ -35,6 +35,11 @@ export function verifyTwilioWebhookSignature(input: { authToken: string; signatu
   return actualBytes.length === expectedBytes.length && timingSafeEqual(actualBytes, expectedBytes);
 }
 
+export function twilioOptOutType(value: string | undefined): SmsComplianceKeyword | undefined {
+  const normalized = value?.trim().toUpperCase();
+  return normalized === "STOP" || normalized === "START" || normalized === "HELP" ? normalized : undefined;
+}
+
 function required(value: string | undefined, field: string) {
   if (!value?.trim()) throw new Error(`${field} is required.`);
   return value.trim();
@@ -44,23 +49,8 @@ function organizationIdFromQuery(value: unknown) {
   return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(value) ? value : undefined;
 }
 
-function escapeXml(value: string) {
-  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
-}
-
-async function responseIdentity(organizationId: string) {
-  const [organization, sender] = await Promise.all([
-    db.collection("organizations").doc(organizationId).get(),
-    db.collection("organizations").doc(organizationId).collection("communicationSettings").doc("emailSender").get(),
-  ]);
-  const name = typeof organization.data()?.name === "string" && organization.data()!.name.trim() ? organization.data()!.name.trim() : "This organization";
-  const supportEmail = typeof sender.data()?.replyTo === "string" ? sender.data()!.replyTo : typeof sender.data()?.fromAddress === "string" ? sender.data()!.fromAddress : undefined;
-  return { name, supportEmail };
-}
-
-function twiml(message?: string) {
-  const body = message ? `<Message>${escapeXml(message)}</Message>` : "";
-  return `<?xml version="1.0" encoding="UTF-8"?><Response>${body}</Response>`;
+function emptyTwiml() {
+  return `<?xml version="1.0" encoding="UTF-8"?><Response></Response>`;
 }
 
 export const twilioInboundSms = onRequest({ secrets: [twilioAuthToken] }, async (request, response) => {
@@ -87,14 +77,21 @@ export const twilioInboundSms = onRequest({ secrets: [twilioAuthToken] }, async 
       response.status(404).send("SMS route not found");
       return;
     }
-    const complianceKeyword = classifySmsComplianceKeyword(body);
+
+    // With Advanced Opt-Out, Twilio sets OptOutType after it has already matched
+    // the keyword, updated its block list and sent the configured confirmation.
+    // Without it, exact reserved-keyword classification mirrors Twilio's default
+    // handling so Nurture can keep a local transport suppression when the inbound
+    // webhook is delivered. Neither path sends a second compliance reply.
+    const providerOptOutType = twilioOptOutType(params.OptOutType);
+    const complianceKeyword = providerOptOutType ?? classifySmsComplianceKeyword(body);
     const now = new Date().toISOString();
     const recipientHash = hashPhoneNumber(from);
     if (complianceKeyword === "STOP") {
-      await setSmsCarrierPreference({ organizationId: route.organizationId, recipientHash, carrierOptOut: true, source: "STOP", updatedAt: now });
+      await setSmsCarrierPreference({ organizationId: route.organizationId, recipientHash, carrierOptOut: true, source: providerOptOutType ? "provider" : "STOP", updatedAt: now });
     } else if (complianceKeyword === "START") {
       // START restores only transport eligibility. It never manufactures marketing/service consent.
-      await setSmsCarrierPreference({ organizationId: route.organizationId, recipientHash, carrierOptOut: false, source: "START", updatedAt: now });
+      await setSmsCarrierPreference({ organizationId: route.organizationId, recipientHash, carrierOptOut: false, source: providerOptOutType ? "provider" : "START", updatedAt: now });
     }
     await recordInboundCommunication({
       organizationId: route.organizationId,
@@ -108,12 +105,7 @@ export const twilioInboundSms = onRequest({ secrets: [twilioAuthToken] }, async 
       complianceKeyword,
     });
 
-    const identity = await responseIdentity(route.organizationId);
-    let reply: string | undefined;
-    if (complianceKeyword === "STOP") reply = `${identity.name}: You are unsubscribed from SMS. Reply START to resume transport where permitted.`;
-    else if (complianceKeyword === "START") reply = `${identity.name}: SMS transport is enabled again. Your communication consent settings still apply.`;
-    else if (complianceKeyword === "HELP") reply = `${identity.name}: Reply STOP to opt out.${identity.supportEmail ? ` Support: ${identity.supportEmail}.` : " Contact the organization for support."}`;
-    response.status(200).type("text/xml").send(twiml(reply));
+    response.status(200).type("text/xml").send(emptyTwiml());
   } catch {
     response.status(400).send("Invalid SMS payload");
   }
