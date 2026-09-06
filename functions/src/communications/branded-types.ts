@@ -132,7 +132,7 @@ export interface SmsCarrierPreference {
 export type SmsComplianceKeyword = "STOP" | "START" | "HELP" | "NONE";
 
 export function classifySmsComplianceKeyword(body: string): SmsComplianceKeyword {
-  const keyword = body.trim().toUpperCase().split(/\s+/)[0] ?? "";
+  const keyword = body.trim().toUpperCase();
   if (["STOP", "STOPALL", "UNSUBSCRIBE", "CANCEL", "END", "QUIT"].includes(keyword)) return "STOP";
   if (["START", "UNSTOP", "YES"].includes(keyword)) return "START";
   if (["HELP", "INFO"].includes(keyword)) return "HELP";
